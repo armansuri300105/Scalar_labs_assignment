@@ -185,7 +185,7 @@ export default function MeetingRoomPage() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const host = process.env.NEXT_PUBLIC_API_URL
         ? process.env.NEXT_PUBLIC_API_URL.replace(/^http(s)?:\/\//, '')
-        : 'localhost:8000';
+        : (typeof window !== 'undefined' ? window.location.host : 'localhost:8000');
       const wsUrl = `${protocol}//${host}/ws/meeting/${mId}?display_name=${encodeURIComponent(name)}&participant_id=${encodeURIComponent(pId)}&role=${role}`;
 
       const ws = new WebSocket(wsUrl);

@@ -145,6 +145,11 @@ export const api = {
       method: 'POST'
     }),
 
+  askParticipantToUnmute: (meetingId: string, participantId: string) =>
+    request<{ message: string }>(`/api/meetings/${encodeURIComponent(meetingId)}/participants/${encodeURIComponent(participantId)}/ask-unmute`, {
+      method: 'POST'
+    }),
+
   removeParticipant: (meetingId: string, participantId: string) =>
     request<{ message: string }>(`/api/meetings/${encodeURIComponent(meetingId)}/participants/${encodeURIComponent(participantId)}`, {
       method: 'DELETE'

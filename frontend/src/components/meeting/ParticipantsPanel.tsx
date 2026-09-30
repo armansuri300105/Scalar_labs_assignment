@@ -12,7 +12,9 @@ interface ParticipantsPanelProps {
   allowRename?: boolean;
   onMuteAll: () => void;
   onRemoveParticipant: (participantId: string) => void;
-  onToggleParticipantMute: (participantId: string) => void;
+  onToggleParticipantMute?: (participantId: string) => void;
+  onAskToUnmute?: (participantId: string, displayName: string) => void;
+  onMuteParticipant?: (participantId: string, displayName: string) => void;
   onOpenInvite: () => void;
   onRenameSelf?: (newName: string) => void;
 }
@@ -26,6 +28,8 @@ export function ParticipantsPanel({
   onMuteAll,
   onRemoveParticipant,
   onToggleParticipantMute,
+  onAskToUnmute,
+  onMuteParticipant,
   onOpenInvite,
   onRenameSelf
 }: ParticipantsPanelProps) {
@@ -194,16 +198,37 @@ export function ParticipantsPanel({
                       className="absolute right-0 mt-1 w-40 bg-[#24272C] rounded-xl shadow-xl border border-white/15 p-1 z-50 text-xs"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <button
-                        onClick={() => {
-                          onToggleParticipantMute(p.id);
-                          setActiveMenuId(null);
-                        }}
-                        className="w-full text-left px-2.5 py-1.5 hover:bg-white/10 rounded-lg text-slate-200 cursor-pointer flex items-center gap-2"
-                      >
-                        <VolumeX className="w-3.5 h-3.5 text-slate-400" />
-                        <span>{p.isMuted ? 'Ask to Unmute' : 'Mute'}</span>
-                      </button>
+                      {p.isMuted ? (
+                        <button
+                          onClick={() => {
+                            if (onAskToUnmute) {
+                              onAskToUnmute(p.id, p.displayName);
+                            } else if (onToggleParticipantMute) {
+                              onToggleParticipantMute(p.id);
+                            }
+                            setActiveMenuId(null);
+                          }}
+                          className="w-full text-left px-2.5 py-1.5 hover:bg-white/10 rounded-lg text-slate-200 cursor-pointer flex items-center gap-2"
+                        >
+                          <Mic className="w-3.5 h-3.5 text-blue-400" />
+                          <span>Ask to Unmute</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            if (onMuteParticipant) {
+                              onMuteParticipant(p.id, p.displayName);
+                            } else if (onToggleParticipantMute) {
+                              onToggleParticipantMute(p.id);
+                            }
+                            setActiveMenuId(null);
+                          }}
+                          className="w-full text-left px-2.5 py-1.5 hover:bg-white/10 rounded-lg text-slate-200 cursor-pointer flex items-center gap-2"
+                        >
+                          <VolumeX className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Mute</span>
+                        </button>
+                      )}
 
                       <button
                         onClick={() => {

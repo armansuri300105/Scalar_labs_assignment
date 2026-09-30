@@ -269,6 +269,13 @@ def get_participants(db: Session, meeting_id: str, active_only: bool = True) -> 
         query = query.filter(models.Participant.left_at.is_(None))
     return query.order_by(models.Participant.joined_at.asc()).all()
 
+def get_participant_by_id(db: Session, meeting_id: str, participant_id: str) -> Optional[models.Participant]:
+    clean_id = clean_meeting_id(meeting_id)
+    return db.query(models.Participant).filter(
+        models.Participant.meeting_id == clean_id,
+        models.Participant.id == participant_id
+    ).first()
+
 def update_participant_status(
     db: Session,
     meeting_id: str,

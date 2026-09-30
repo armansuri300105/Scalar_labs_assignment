@@ -294,6 +294,22 @@ def test_security_options(meeting_id, owner_token):
     assert r_rename_ok.json()["display_name"] == "Verified Guest"
     print("✓ Participant rename permitted when enabled by host")
 
+    # 9. Host asks participant to unmute (targeted request, does not force mic on)
+    # Unauthorized caller -> 403
+    r_unauth_ask = client.post(f"/api/meetings/{meeting_id}/participants/{guest_id}/ask-unmute")
+    assert r_unauth_ask.status_code == 403
+    print("✓ Unauthorized ask-to-unmute rejected with 403")
+
+    # Host caller -> 200
+    r_host_ask = client.post(f"/api/meetings/{meeting_id}/participants/{guest_id}/ask-unmute", headers=owner_headers)
+    assert r_host_ask.status_code == 200
+    assert r_host_ask.json()["message"] == "Unmute request sent to participant"
+    print("✓ Host ask-to-unmute accepted with 200 without forcing participant mic state")
+
+    # Non-existent participant -> 404
+    r_ask_404 = client.post(f"/api/meetings/{meeting_id}/participants/invalid_id/ask-unmute", headers=owner_headers)
+    assert r_ask_404.status_code == 404
+
     # Clean up guest
     client.post(f"/api/meetings/{meeting_id}/leave?participant_id={guest_id}")
 

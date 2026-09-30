@@ -477,6 +477,30 @@ async def remove_participant_endpoint(
     })
     return {"message": "Participant removed by host"}
 
+@app.post("/api/meetings/{meeting_id}/participants/{participant_id}/ask-unmute", tags=["Host Controls"])
+async def ask_participant_unmute_endpoint(
+    meeting_id: str,
+    participant_id: str,
+    current_user: Optional[models.User] = Depends(auth.get_optional_user),
+    db: Session = Depends(get_db)
+):
+    meeting = crud.get_meeting(db, meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    check_host_authorization(meeting, current_user)
+    
+    participant = crud.get_participant_by_id(db, meeting.id, participant_id)
+    if not participant:
+        raise HTTPException(status_code=404, detail="Participant not found")
+    
+    host_name = current_user.full_name if current_user else meeting.host_name
+    await manager.send_to_user(meeting.id, participant_id, {
+        "type": "ASK_UNMUTE",
+        "host_name": host_name
+    })
+    return {"message": "Unmute request sent to participant"}
+
 @app.post("/api/meetings/{meeting_id}/end", tags=["Host Controls"])
 async def end_meeting_endpoint(
     meeting_id: str,
@@ -585,6 +609,28 @@ async def meeting_websocket(
                         "type": "SIGNAL",
                         "sender": participant_id,
                         "payload": data.get("payload")
+                    })
+            elif event_type == "ASK_UNMUTE":
+                target_id = data.get("target")
+                if target_id:
+                    await manager.send_to_user(meeting_id, target_id, {
+                        "type": "ASK_UNMUTE",
+                        "host_name": display_name
+                    })
+            elif event_type == "MUTE_PARTICIPANT":
+                target_id = data.get("target")
+                if target_id:
+                    crud.update_participant_status(db, meeting_id, target_id, is_muted=True)
+                    await manager.send_to_user(meeting_id, target_id, {
+                        "type": "HOST_MUTED_YOU",
+                        "host_name": display_name
+                    })
+                    await manager.broadcast(meeting_id, {
+                        "type": "PARTICIPANT_UPDATED",
+                        "participant": {
+                            "id": target_id,
+                            "is_muted": True
+                        }
                     })
             elif event_type == "CHAT":
                 # Chat message via socket

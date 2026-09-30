@@ -15,6 +15,7 @@ import { InviteModal } from '../../../components/modals/InviteModal';
 import { Meeting, Participant, ChatMessage, SecuritySettings } from '../../../types';
 import { api } from '../../../lib/api';
 import { useToast } from '../../../context/ToastContext';
+import { Mic } from 'lucide-react';
 
 export default function MeetingRoomPage() {
   const params = useParams();
@@ -38,6 +39,7 @@ export default function MeetingRoomPage() {
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [isHandRaised, setIsHandRaised] = useState(false);
+  const [unmuteRequest, setUnmuteRequest] = useState<{ isOpen: boolean; hostName: string } | null>(null);
 
   // Media Streams
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -448,6 +450,19 @@ export default function MeetingRoomPage() {
               }
             } else if (data.type === 'REACTION') {
               triggerReaction(data.emoji, data.sender_name);
+            } else if (data.type === 'ASK_UNMUTE') {
+              const hostName = data.host_name || 'The host';
+              info(`${hostName} asked you to unmute your microphone.`);
+              setUnmuteRequest({ isOpen: true, hostName });
+            } else if (data.type === 'HOST_MUTED_YOU') {
+              setIsMuted(true);
+              if (localStreamRef.current) {
+                localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = false));
+              }
+              setRoomParticipants((prev) =>
+                prev.map((p) => (p.isSelf ? { ...p, isMuted: true } : p))
+              );
+              info('The host muted your microphone.');
             } else if (data.type === 'HOST_MUTED_ALL') {
               setIsMuted(true);
               if (localStreamRef.current) {
@@ -612,6 +627,10 @@ export default function MeetingRoomPage() {
                 if (!pc || pc.signalingState === 'stable') {
                   initiateCallToPeer(senderId);
                 }
+              } else if (payload.type === 'ask-unmute') {
+                const host = payload.hostName || 'The host';
+                info(`${host} asked you to unmute your microphone.`);
+                setUnmuteRequest({ isOpen: true, hostName: host });
               }
             } else if (data.type === 'PARTICIPANT_UPDATED') {
               const updated = data.participant;
@@ -1101,7 +1120,47 @@ export default function MeetingRoomPage() {
     }
   };
 
-  // Host Control: Toggle Participant Mute
+  // Host Control: Ask Participant to Unmute (does NOT change mic state directly)
+  const handleAskToUnmute = async (participantId: string, targetName: string) => {
+    if (!meeting) return;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'SIGNAL',
+          target: participantId,
+          payload: { type: 'ask-unmute', hostName: currentDisplayName }
+        })
+      );
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'ASK_UNMUTE',
+          target: participantId
+        })
+      );
+    }
+    api.askParticipantToUnmute(meeting.id, participantId).catch(() => {});
+    success(`Asked ${targetName} to unmute their microphone.`);
+  };
+
+  // Host Control: Mute Specific Participant
+  const handleMuteParticipant = async (participantId: string, targetName: string) => {
+    if (!meeting) return;
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'MUTE_PARTICIPANT',
+          target: participantId
+        })
+      );
+    }
+    api.updateParticipantState(meeting.id, participantId, { is_muted: true }).catch(() => {});
+    setRoomParticipants((prev) =>
+      prev.map((p) => (p.id === participantId ? { ...p, isMuted: true } : p))
+    );
+    success(`Muted ${targetName}.`);
+  };
+
+  // Host Control: Toggle Participant Mute (fallback)
   const handleToggleParticipantMute = (participantId: string) => {
     setRoomParticipants((prev) =>
       prev.map((p) => (p.id === participantId ? { ...p, isMuted: !p.isMuted } : p))
@@ -1235,6 +1294,8 @@ export default function MeetingRoomPage() {
           onMuteAll={handleMuteAll}
           onRemoveParticipant={handleRemoveParticipant}
           onToggleParticipantMute={handleToggleParticipantMute}
+          onAskToUnmute={handleAskToUnmute}
+          onMuteParticipant={handleMuteParticipant}
           onOpenInvite={() => setIsInviteModalOpen(true)}
           onRenameSelf={handleRenameSelf}
         />
@@ -1310,6 +1371,45 @@ export default function MeetingRoomPage() {
         meeting={meeting}
         onJoinMeeting={() => setIsInviteModalOpen(false)}
       />
+
+      {/* Ask to Unmute Request Modal */}
+      {unmuteRequest && unmuteRequest.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-sm bg-[#24272C] rounded-2xl shadow-2xl border border-white/15 p-6 text-white text-center space-y-4">
+            <div className="w-14 h-14 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center mx-auto">
+              <Mic className="w-7 h-7" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">The Host Would Like You to Unmute</h3>
+              <p className="text-xs text-slate-400 mt-1.5">
+                <span className="font-semibold text-slate-200">{unmuteRequest.hostName}</span> has requested that you unmute your microphone.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 pt-2">
+              <button
+                onClick={async () => {
+                  setUnmuteRequest(null);
+                  if (isMuted) await handleToggleMute();
+                  success('Your microphone is now unmuted.');
+                }}
+                className="w-full py-2.5 rounded-xl bg-[#0E71EB] hover:bg-[#0B5ED7] text-white text-xs font-bold transition-all shadow-md shadow-blue-500/25 cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Mic className="w-4 h-4" />
+                <span>Unmute Myself</span>
+              </button>
+              <button
+                onClick={() => {
+                  setUnmuteRequest(null);
+                  info('You chose to stay muted.');
+                }}
+                className="w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white text-xs font-semibold transition-all cursor-pointer"
+              >
+                Stay Muted
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

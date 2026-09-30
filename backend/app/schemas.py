@@ -65,6 +65,20 @@ class MeetingCreateScheduled(BaseModel):
             raise ValueError("Meeting title cannot be blank or empty.")
         return v.strip()
 
+class MeetingRescheduleRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    scheduled_at: Optional[datetime] = None
+    duration_minutes: Optional[int] = Field(default=None, gt=0, le=1440)
+    passcode: Optional[str] = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title_not_empty(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError("Meeting title cannot be blank or empty.")
+        return v.strip() if v is not None else None
+
 class MeetingResolveRequest(BaseModel):
     query: str = Field(..., min_length=1)
 

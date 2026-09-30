@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { History, Copy, Clock, CheckCircle2, User, RefreshCw } from 'lucide-react';
+import { History, Copy, Clock, CheckCircle2, User, RefreshCw, Trash2 } from 'lucide-react';
 import { Meeting } from '../../types';
 import { formatDateTime, formatMeetingId, copyToClipboard } from '../../lib/utils';
 import { useToast } from '../../context/ToastContext';
@@ -10,9 +10,10 @@ interface RecentMeetingsProps {
   meetings: Meeting[];
   isLoading: boolean;
   onJoinMeeting: (meetingId: string) => void;
+  onDeleteMeeting?: (meeting: Meeting) => void;
 }
 
-export function RecentMeetings({ meetings, isLoading, onJoinMeeting }: RecentMeetingsProps) {
+export function RecentMeetings({ meetings, isLoading, onJoinMeeting, onDeleteMeeting }: RecentMeetingsProps) {
   const { success, error } = useToast();
 
   const handleCopyId = async (id: string, e: React.MouseEvent) => {
@@ -94,6 +95,16 @@ export function RecentMeetings({ meetings, isLoading, onJoinMeeting }: RecentMee
                 >
                   <Copy className="w-3.5 h-3.5" />
                 </button>
+
+                {onDeleteMeeting && (
+                  <button
+                    onClick={() => onDeleteMeeting(meeting)}
+                    title="Delete Meeting History"
+                    className="p-2 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 dark:hover:text-red-400 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
 
                 <button
                   onClick={() => onJoinMeeting(meeting.id)}

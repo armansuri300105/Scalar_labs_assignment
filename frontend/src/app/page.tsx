@@ -10,6 +10,8 @@ import { UpcomingMeetings } from '../components/dashboard/UpcomingMeetings';
 import { RecentMeetings } from '../components/dashboard/RecentMeetings';
 import { JoinModal } from '../components/modals/JoinModal';
 import { ScheduleModal } from '../components/modals/ScheduleModal';
+import { RescheduleModal } from '../components/modals/RescheduleModal';
+import { DeleteMeetingModal } from '../components/modals/DeleteMeetingModal';
 import { InviteModal } from '../components/modals/InviteModal';
 import { Meeting } from '../types';
 import { api } from '../lib/api';
@@ -30,6 +32,8 @@ export default function DashboardPage() {
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [selectedInviteMeeting, setSelectedInviteMeeting] = useState<Meeting | null>(null);
+  const [selectedRescheduleMeeting, setSelectedRescheduleMeeting] = useState<Meeting | null>(null);
+  const [selectedDeleteMeeting, setSelectedDeleteMeeting] = useState<Meeting | null>(null);
   const [isStartingInstant, setIsStartingInstant] = useState(false);
 
   // Fetch upcoming and recent meetings from FastAPI backend for the authenticated user
@@ -115,6 +119,18 @@ export default function DashboardPage() {
     setSelectedInviteMeeting(meeting);
   };
 
+  // Handler: When a meeting is rescheduled / updated
+  const handleMeetingRescheduled = (updated: Meeting) => {
+    setUpcomingMeetings((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+    setRecentMeetings((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+  };
+
+  // Handler: When a meeting is deleted
+  const handleMeetingDeleted = (meetingId: string) => {
+    setUpcomingMeetings((prev) => prev.filter((m) => m.id !== meetingId));
+    setRecentMeetings((prev) => prev.filter((m) => m.id !== meetingId));
+  };
+
   // Handler: Share screen action
   const handleShareScreen = () => {
     setIsJoinModalOpen(true);
@@ -182,6 +198,8 @@ export default function DashboardPage() {
                 onOpenScheduleModal={handleOpenScheduleModal}
                 onOpenInviteModal={(meeting) => setSelectedInviteMeeting(meeting)}
                 onJoinMeeting={handleJoinMeeting}
+                onRescheduleMeeting={(meeting) => setSelectedRescheduleMeeting(meeting)}
+                onDeleteMeeting={(meeting) => setSelectedDeleteMeeting(meeting)}
               />
 
               {/* Recent Meetings */}
@@ -189,6 +207,7 @@ export default function DashboardPage() {
                 meetings={recentMeetings}
                 isLoading={isLoadingMeetings}
                 onJoinMeeting={handleJoinMeeting}
+                onDeleteMeeting={(meeting) => setSelectedDeleteMeeting(meeting)}
               />
             </div>
           </div>
@@ -205,6 +224,20 @@ export default function DashboardPage() {
         isOpen={isScheduleModalOpen}
         onClose={() => setIsScheduleModalOpen(false)}
         onMeetingScheduled={handleMeetingScheduled}
+      />
+
+      <RescheduleModal
+        isOpen={!!selectedRescheduleMeeting}
+        onClose={() => setSelectedRescheduleMeeting(null)}
+        meeting={selectedRescheduleMeeting}
+        onMeetingRescheduled={handleMeetingRescheduled}
+      />
+
+      <DeleteMeetingModal
+        isOpen={!!selectedDeleteMeeting}
+        onClose={() => setSelectedDeleteMeeting(null)}
+        meeting={selectedDeleteMeeting}
+        onMeetingDeleted={handleMeetingDeleted}
       />
 
       <InviteModal

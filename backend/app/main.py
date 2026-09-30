@@ -519,6 +519,43 @@ async def end_meeting_endpoint(
     })
     return {"message": "Meeting ended for all"}
 
+@app.patch("/api/meetings/{meeting_id}", response_model=schemas.MeetingResponse, tags=["Meetings"])
+@app.post("/api/meetings/{meeting_id}/reschedule", response_model=schemas.MeetingResponse, tags=["Meetings"])
+async def reschedule_meeting_endpoint(
+    meeting_id: str,
+    payload: schemas.MeetingRescheduleRequest,
+    current_user: Optional[models.User] = Depends(auth.get_optional_user),
+    db: Session = Depends(get_db)
+):
+    meeting = crud.get_meeting(db, meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    check_host_authorization(meeting, current_user)
+    
+    updated = crud.update_meeting(db, meeting.id, payload)
+    return enrich_meeting(updated)
+
+@app.delete("/api/meetings/{meeting_id}", tags=["Meetings"])
+async def delete_meeting_endpoint(
+    meeting_id: str,
+    current_user: Optional[models.User] = Depends(auth.get_optional_user),
+    db: Session = Depends(get_db)
+):
+    meeting = crud.get_meeting(db, meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    check_host_authorization(meeting, current_user)
+    
+    await manager.broadcast(meeting.id, {
+        "type": "MEETING_DELETED",
+        "meeting_id": meeting.id
+    })
+    
+    crud.delete_meeting(db, meeting.id)
+    return {"message": "Meeting deleted successfully"}
+
 # --- Chat In-Meeting ---
 @app.get("/api/meetings/{meeting_id}/messages", response_model=List[schemas.ChatMessageResponse], tags=["Chat"])
 def get_messages(

@@ -146,6 +146,52 @@ def create_scheduled_meeting(
     db.refresh(meeting)
     return meeting
 
+def update_meeting(
+    db: Session,
+    meeting_id: str,
+    update_data: schemas.MeetingRescheduleRequest
+) -> Optional[models.Meeting]:
+    clean_id = clean_meeting_id(meeting_id)
+    meeting = db.query(models.Meeting).filter(models.Meeting.id == clean_id).first()
+    if not meeting:
+        return None
+    
+    if update_data.title is not None and update_data.title.strip():
+        meeting.title = update_data.title.strip()
+    if update_data.description is not None:
+        meeting.description = update_data.description.strip() or None
+    if update_data.scheduled_at is not None:
+        sched_time = update_data.scheduled_at
+        if sched_time.tzinfo is None:
+            sched_time = sched_time.replace(tzinfo=timezone.utc)
+        meeting.scheduled_at = sched_time
+        meeting.status = "scheduled"
+    if update_data.duration_minutes is not None:
+        meeting.duration_minutes = update_data.duration_minutes
+    if update_data.passcode is not None:
+        meeting.passcode = update_data.passcode.strip() or None
+    
+    meeting.updated_at = datetime.now(timezone.utc)
+
+    activity = models.MeetingActivity(
+        meeting_id=meeting.id,
+        activity_type="rescheduled",
+        details=f"Meeting rescheduled / updated for {meeting.scheduled_at.isoformat() if meeting.scheduled_at else 'N/A'}"
+    )
+    db.add(activity)
+    db.commit()
+    db.refresh(meeting)
+    return meeting
+
+def delete_meeting(db: Session, meeting_id: str) -> bool:
+    clean_id = clean_meeting_id(meeting_id)
+    meeting = db.query(models.Meeting).filter(models.Meeting.id == clean_id).first()
+    if not meeting:
+        return False
+    db.delete(meeting)
+    db.commit()
+    return True
+
 def get_user_meetings(
     db: Session,
     user_id: str,

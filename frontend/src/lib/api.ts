@@ -105,6 +105,26 @@ export const api = {
   getMeetingByInviteToken: (token: string) =>
     request<Meeting>(`/api/invites/${encodeURIComponent(token)}`),
 
+  rescheduleMeeting: (
+    meetingId: string,
+    data: {
+      title?: string;
+      description?: string;
+      scheduled_at?: string;
+      duration_minutes?: number;
+      passcode?: string;
+    }
+  ) =>
+    request<Meeting>(`/api/meetings/${encodeURIComponent(meetingId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data)
+    }),
+
+  deleteMeeting: (meetingId: string) =>
+    request<{ message: string }>(`/api/meetings/${encodeURIComponent(meetingId)}`, {
+      method: 'DELETE'
+    }),
+
   // Join & Participants
   joinMeeting: (meetingId: string, data: JoinMeetingInput) =>
     request<Participant>(`/api/meetings/${encodeURIComponent(meetingId)}/join`, {

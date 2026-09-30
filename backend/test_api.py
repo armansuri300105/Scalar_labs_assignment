@@ -313,6 +313,53 @@ def test_security_options(meeting_id, owner_token):
     # Clean up guest
     client.post(f"/api/meetings/{meeting_id}/leave?participant_id={guest_id}")
 
+def test_reschedule_and_delete_meeting(meeting_id: str, owner_token: str):
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    
+    # 1. Unauthorized reschedule -> 403
+    unauth_reschedule = client.patch(
+        f"/api/meetings/{meeting_id}",
+        json={"title": "Hacked Title", "duration_minutes": 60}
+    )
+    assert unauth_reschedule.status_code == 403
+    print("✓ Unauthorized reschedule blocked with 403")
+
+    # 2. Host reschedules meeting -> 200
+    new_time = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
+    reschedule_res = client.patch(
+        f"/api/meetings/{meeting_id}",
+        headers=owner_headers,
+        json={
+            "title": "Quarterly Planning & Sprint Sync",
+            "description": "Updated agenda with OKRs and deliverables",
+            "scheduled_at": new_time,
+            "duration_minutes": 90,
+            "passcode": "987654"
+        }
+    )
+    assert reschedule_res.status_code == 200
+    updated_data = reschedule_res.json()
+    assert updated_data["title"] == "Quarterly Planning & Sprint Sync"
+    assert updated_data["duration_minutes"] == 90
+    assert updated_data["passcode"] == "987654"
+    print("✓ Host reschedule accepted with 200 and fields updated")
+
+    # 3. Unauthorized delete -> 403
+    unauth_delete = client.delete(f"/api/meetings/{meeting_id}")
+    assert unauth_delete.status_code == 403
+    print("✓ Unauthorized delete blocked with 403")
+
+    # 4. Host deletes meeting -> 200
+    delete_res = client.delete(f"/api/meetings/{meeting_id}", headers=owner_headers)
+    assert delete_res.status_code == 200
+    assert delete_res.json()["message"] == "Meeting deleted successfully"
+    print("✓ Host delete accepted with 200 and meeting removed")
+
+    # 5. Verify meeting is gone (404)
+    get_res = client.get(f"/api/meetings/{meeting_id}")
+    assert get_res.status_code == 404
+    print("✓ Verified deleted meeting returns 404")
+
 if __name__ == "__main__":
     print("\n==========================================")
     print("RUNNING COMPREHENSIVE SECURITY & CHAT TESTS")
@@ -323,6 +370,7 @@ if __name__ == "__main__":
     mid, inv_token = test_authenticated_meeting_lifecycle(token, user_id, host_name)
     test_guest_access_and_chat_deduplication(mid, inv_token, token)
     test_security_options(mid, token)
+    test_reschedule_and_delete_meeting(mid, token)
     print("\n==========================================")
     print("ALL TESTS PASSED WITH 100% SUCCESS! 🎉")
     print("==========================================\n")

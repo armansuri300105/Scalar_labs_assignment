@@ -122,8 +122,27 @@ export default function MeetingRoomPage() {
         }
       }
 
-      // Initialize participants list with realistic peers
-      const peers: TileParticipant[] = [
+      // Fetch existing active participants in this meeting from the backend
+      let existingPeers: TileParticipant[] = [];
+      try {
+        const activeList: Participant[] = await api.getParticipants(meeting.id);
+        existingPeers = (activeList || [])
+          .filter((p: Participant) => p.id !== participant.id && !p.left_at)
+          .map((p: Participant) => ({
+            id: p.id,
+            displayName: p.display_name,
+            role: p.role as 'host' | 'participant',
+            isSelf: false,
+            isMuted: p.is_muted ?? false,
+            isVideoOff: p.is_video_off ?? false,
+            isSpeaking: false,
+            isHandRaised: p.is_hand_raised ?? false
+          }));
+      } catch (fetchErr) {
+        console.warn('Could not fetch existing participants:', fetchErr);
+      }
+
+      const initialParticipants: TileParticipant[] = [
         {
           id: participant.id,
           displayName: participant.display_name,
@@ -134,38 +153,9 @@ export default function MeetingRoomPage() {
           isSpeaking: false,
           isHandRaised: false
         },
-        {
-          id: 'peer-priya',
-          displayName: 'Priya Sharma',
-          role: 'participant',
-          isSelf: false,
-          isMuted: true,
-          isVideoOff: false,
-          isSpeaking: false,
-          avatarColor: 'from-emerald-600 to-teal-700'
-        },
-        {
-          id: 'peer-alex',
-          displayName: 'Alex Rivera',
-          role: 'participant',
-          isSelf: false,
-          isMuted: false,
-          isVideoOff: false,
-          isSpeaking: false,
-          avatarColor: 'from-purple-600 to-indigo-700'
-        },
-        {
-          id: 'peer-david',
-          displayName: 'David Miller',
-          role: 'participant',
-          isSelf: false,
-          isMuted: true,
-          isVideoOff: true,
-          isSpeaking: false,
-          avatarColor: 'from-amber-600 to-orange-700'
-        }
+        ...existingPeers
       ];
-      setRoomParticipants(peers);
+      setRoomParticipants(initialParticipants);
 
       // Connect WebSocket
       connectWebSocket(meeting.id, participant.id, displayName, role);
@@ -227,21 +217,43 @@ export default function MeetingRoomPage() {
             cleanupAndLeave();
           } else if (data.type === 'PARTICIPANT_JOINED') {
             const newP = data.participant;
-            setRoomParticipants((prev) => {
-              if (prev.some((p) => p.id === newP.id)) return prev;
-              return [
-                ...prev,
-                {
-                  id: newP.id,
-                  displayName: newP.display_name,
-                  role: newP.role,
-                  isSelf: false,
-                  isMuted: newP.is_muted ?? false,
-                  isVideoOff: newP.is_video_off ?? false
-                }
-              ];
-            });
-            info(`${newP.display_name} joined the meeting.`);
+            if (newP && newP.id !== pId) {
+              setRoomParticipants((prev) => {
+                if (prev.some((p) => p.id === newP.id)) return prev;
+                return [
+                  ...prev,
+                  {
+                    id: newP.id,
+                    displayName: newP.display_name,
+                    role: newP.role,
+                    isSelf: false,
+                    isMuted: newP.is_muted ?? false,
+                    isVideoOff: newP.is_video_off ?? false,
+                    isSpeaking: false,
+                    isHandRaised: false
+                  }
+                ];
+              });
+              info(`${newP.display_name} joined the meeting.`);
+            }
+          } else if (data.type === 'PARTICIPANT_UPDATED') {
+            const updated = data.participant;
+            if (updated) {
+              setRoomParticipants((prev) =>
+                prev.map((p) =>
+                  p.id === updated.id
+                    ? {
+                        ...p,
+                        displayName: updated.display_name ?? p.displayName,
+                        role: updated.role ?? p.role,
+                        isMuted: updated.is_muted ?? p.isMuted,
+                        isVideoOff: updated.is_video_off ?? p.isVideoOff,
+                        isHandRaised: updated.is_hand_raised ?? p.isHandRaised
+                      }
+                    : p
+                )
+              );
+            }
           } else if (data.type === 'PARTICIPANT_LEFT') {
             setRoomParticipants((prev) => prev.filter((p) => p.id !== data.participant_id));
             if (data.display_name) {
@@ -270,26 +282,65 @@ export default function MeetingRoomPage() {
     }
   }, [localStream, isVideoOff, isMuted, selfParticipant]);
 
-  // Simulated peer speech activity for authentic Zoom experience
+  // Real microphone audio level detection for speaking highlight
   useEffect(() => {
-    if (!hasJoined) return;
-    const interval = setInterval(() => {
-      // randomly choose a peer to speak for a few seconds
-      const peerIds = ['peer-alex', 'peer-priya'];
-      const chosen = Math.random() > 0.4 ? peerIds[Math.floor(Math.random() * peerIds.length)] : null;
+    if (!localStream || isMuted || !hasJoined) {
       setRoomParticipants((prev) =>
-        prev.map((p) => {
-          if (p.isSelf) return p;
-          return {
-            ...p,
-            isSpeaking: p.id === chosen && !p.isMuted
-          };
-        })
+        prev.map((p) => (p.isSelf && p.isSpeaking ? { ...p, isSpeaking: false } : p))
       );
-    }, 4500);
+      return;
+    }
 
-    return () => clearInterval(interval);
-  }, [hasJoined]);
+    let audioCtx: AudioContext | null = null;
+    let analyser: AnalyserNode | null = null;
+    let source: MediaStreamAudioSourceNode | null = null;
+    let animId: number;
+
+    try {
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextClass) return;
+
+      audioCtx = new AudioContextClass();
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      source = audioCtx.createMediaStreamSource(localStream);
+      source.connect(analyser);
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      const checkVolume = () => {
+        if (!analyser) return;
+        analyser.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i];
+        }
+        const avg = sum / bufferLength;
+        const speaking = avg > 20;
+
+        setRoomParticipants((prev) =>
+          prev.map((p) => (p.isSelf && p.isSpeaking !== speaking ? { ...p, isSpeaking: speaking } : p))
+        );
+
+        animId = requestAnimationFrame(checkVolume);
+      };
+
+      animId = requestAnimationFrame(checkVolume);
+    } catch {
+      // AudioContext error or denied
+    }
+
+    return () => {
+      if (animId) cancelAnimationFrame(animId);
+      if (source) source.disconnect();
+      if (audioCtx && audioCtx.state !== 'closed') {
+        audioCtx.close().catch(() => {});
+      }
+    };
+  }, [localStream, isMuted, hasJoined]);
 
   // Trigger floating reaction animation
   const triggerReaction = (emoji: string, senderName: string) => {

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Search, Settings, HelpCircle, Bell, Video, User, Check, ChevronDown, LogIn, LogOut } from 'lucide-react';
+import { Search, Video, ChevronDown, LogOut } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 export function DashboardNavbar() {
@@ -39,30 +39,14 @@ export function DashboardNavbar() {
           <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
           <input
             type="text"
-            placeholder="Search meetings, recordings, contacts..."
+            placeholder="Search meetings..."
             className="w-full pl-9 pr-4 py-1.5 text-sm bg-slate-100 dark:bg-slate-800/80 rounded-full border border-transparent focus:border-[#0E71EB] dark:focus:border-blue-500 focus:bg-white dark:focus:bg-[#16181D] text-slate-800 dark:text-slate-100 placeholder-slate-400 outline-none transition-all"
           />
         </div>
       </div>
 
-      {/* Right: Actions & User Avatar / Sign In */}
+      {/* Right: User Avatar / Sign In */}
       <div className="flex items-center gap-3">
-        <button
-          title="Notifications"
-          className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors relative"
-        >
-          <Bell className="w-5 h-5" />
-          <span className="w-2 h-2 rounded-full bg-emerald-500 absolute top-2 right-2 ring-2 ring-white dark:ring-[#1E2024]" />
-        </button>
-
-        <button
-          title="Settings"
-          className="p-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-        >
-          <Settings className="w-5 h-5" />
-        </button>
-
-        <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-1" />
 
         {user ? (
           /* Logged In User Avatar with Dropdown */

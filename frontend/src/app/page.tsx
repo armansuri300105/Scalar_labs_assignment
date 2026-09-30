@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { Disc } from 'lucide-react';
 import { DashboardNavbar } from '../components/dashboard/DashboardNavbar';
 import { DashboardSidebar } from '../components/dashboard/DashboardSidebar';
 import { ClockWidget } from '../components/dashboard/ClockWidget';
@@ -149,27 +150,29 @@ export default function DashboardPage() {
         {/* Content Area */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-8 lg:p-10">
           <div className="max-w-6xl mx-auto space-y-8">
-            {/* Top Row: Quick Actions + Real-Time Clock */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-              {/* Quick Actions (4 Iconic Buttons) */}
-              <div className="lg:col-span-7 bg-white dark:bg-[#1E2024] rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 sm:p-8 shadow-xs flex items-center justify-center">
-                <QuickActions
-                  onStartInstantMeeting={handleStartInstantMeeting}
-                  onOpenJoinModal={() => setIsJoinModalOpen(true)}
-                  onOpenScheduleModal={handleOpenScheduleModal}
-                  onShareScreen={handleShareScreen}
-                  isStartingInstant={isStartingInstant}
-                />
-              </div>
+            {/* Top Row: Quick Actions + Real-Time Clock (Home view) */}
+            {activeTab === 'home' && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+                {/* Quick Actions (4 Iconic Buttons) */}
+                <div className="lg:col-span-7 bg-white dark:bg-[#1E2024] rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 sm:p-8 shadow-xs flex items-center justify-center">
+                  <QuickActions
+                    onStartInstantMeeting={handleStartInstantMeeting}
+                    onOpenJoinModal={() => setIsJoinModalOpen(true)}
+                    onOpenScheduleModal={handleOpenScheduleModal}
+                    onShareScreen={handleShareScreen}
+                    isStartingInstant={isStartingInstant}
+                  />
+                </div>
 
-              {/* Live Clock Card */}
-              <div className="lg:col-span-5">
-                <ClockWidget />
+                {/* Live Clock Card */}
+                <div className="lg:col-span-5">
+                  <ClockWidget />
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Guest Banner if not signed in */}
-            {!user && (
+            {!user && activeTab !== 'recordings' && (
               <div className="bg-gradient-to-r from-blue-600/10 via-indigo-600/10 to-blue-500/5 border border-blue-500/20 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="space-y-1">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -189,27 +192,42 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* Meetings Lists: Upcoming & Recent */}
-            <div className="grid grid-cols-1 gap-8">
-              {/* Upcoming Meetings */}
-              <UpcomingMeetings
-                meetings={upcomingMeetings}
-                isLoading={isLoadingMeetings}
-                onOpenScheduleModal={handleOpenScheduleModal}
-                onOpenInviteModal={(meeting) => setSelectedInviteMeeting(meeting)}
-                onJoinMeeting={handleJoinMeeting}
-                onRescheduleMeeting={(meeting) => setSelectedRescheduleMeeting(meeting)}
-                onDeleteMeeting={(meeting) => setSelectedDeleteMeeting(meeting)}
-              />
+            {/* Meetings Lists: Upcoming & Recent (Home and Meetings views) */}
+            {(activeTab === 'home' || activeTab === 'meetings') && (
+              <div className="grid grid-cols-1 gap-8">
+                {/* Upcoming Meetings */}
+                <UpcomingMeetings
+                  meetings={upcomingMeetings}
+                  isLoading={isLoadingMeetings}
+                  onOpenScheduleModal={handleOpenScheduleModal}
+                  onOpenInviteModal={(meeting) => setSelectedInviteMeeting(meeting)}
+                  onJoinMeeting={handleJoinMeeting}
+                  onRescheduleMeeting={(meeting) => setSelectedRescheduleMeeting(meeting)}
+                  onDeleteMeeting={(meeting) => setSelectedDeleteMeeting(meeting)}
+                />
 
-              {/* Recent Meetings */}
-              <RecentMeetings
-                meetings={recentMeetings}
-                isLoading={isLoadingMeetings}
-                onJoinMeeting={handleJoinMeeting}
-                onDeleteMeeting={(meeting) => setSelectedDeleteMeeting(meeting)}
-              />
-            </div>
+                {/* Recent Meetings */}
+                <RecentMeetings
+                  meetings={recentMeetings}
+                  isLoading={isLoadingMeetings}
+                  onJoinMeeting={handleJoinMeeting}
+                  onDeleteMeeting={(meeting) => setSelectedDeleteMeeting(meeting)}
+                />
+              </div>
+            )}
+
+            {/* Recordings view */}
+            {activeTab === 'recordings' && (
+              <div className="bg-white dark:bg-[#1E2024] rounded-2xl border border-slate-200/80 dark:border-slate-800 p-12 text-center shadow-xs">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-[#0E71EB] flex items-center justify-center">
+                  <Disc className="w-8 h-8" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white mb-1">No Cloud Recordings</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                  There are no saved recordings yet. Cloud recordings will appear here once available.
+                </p>
+              </div>
+            )}
           </div>
         </main>
       </div>

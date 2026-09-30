@@ -1,8 +1,7 @@
 'use client';
 
 import React from 'react';
-import Link from 'next/link';
-import { Home, Calendar, Users, MessageSquare, LayoutTemplate, Disc, Phone } from 'lucide-react';
+import { Home, Calendar, Disc } from 'lucide-react';
 
 interface SidebarProps {
   activeTab: 'home' | 'meetings' | 'recordings';
@@ -13,9 +12,6 @@ export function DashboardSidebar({ activeTab, onSelectTab }: SidebarProps) {
   const navItems = [
     { id: 'home' as const, label: 'Home', icon: Home },
     { id: 'meetings' as const, label: 'Meetings', icon: Calendar },
-    { id: 'team-chat', label: 'Team Chat', icon: MessageSquare, badge: '3' },
-    { id: 'whiteboards', label: 'Whiteboards', icon: LayoutTemplate },
-    { id: 'contacts', label: 'Contacts', icon: Users },
     { id: 'recordings' as const, label: 'Recordings', icon: Disc },
   ];
 
@@ -30,11 +26,7 @@ export function DashboardSidebar({ activeTab, onSelectTab }: SidebarProps) {
             return (
               <button
                 key={item.id}
-                onClick={() => {
-                  if (item.id === 'home' || item.id === 'meetings' || item.id === 'recordings') {
-                    onSelectTab(item.id);
-                  }
-                }}
+                onClick={() => onSelectTab(item.id)}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-medium text-sm transition-all duration-150 ${
                   isActive
                     ? 'bg-[#0E71EB] text-white shadow-sm shadow-blue-500/20'
@@ -45,11 +37,6 @@ export function DashboardSidebar({ activeTab, onSelectTab }: SidebarProps) {
                   <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-500 dark:text-slate-400'}`} />
                   <span>{item.label}</span>
                 </div>
-                {item.badge && (
-                  <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
-                    {item.badge}
-                  </span>
-                )}
               </button>
             );
           })}

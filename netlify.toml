@@ -1,0 +1,8 @@
+[build]
+  base = "frontend"
+  publish = ".next"
+  command = "npm run build"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_PUBLIC_API_URL = "https://scalar-labs-assignment.onrender.com"

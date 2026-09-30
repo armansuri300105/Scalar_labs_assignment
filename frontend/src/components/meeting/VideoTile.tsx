@@ -34,13 +34,39 @@ export function VideoTile({
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isRemoteSpeaking, setIsRemoteSpeaking] = useState(false);
 
-  // Sync video stream
+  // Sync video stream and handle play / track unmuting
   useEffect(() => {
-    if (videoRef.current && participant.stream && !participant.isVideoOff) {
-      if (videoRef.current.srcObject !== participant.stream) {
-        videoRef.current.srcObject = participant.stream;
-      }
+    const videoEl = videoRef.current;
+    const stream = participant.stream;
+    if (!videoEl || !stream || participant.isVideoOff) return;
+
+    if (videoEl.srcObject !== stream) {
+      videoEl.srcObject = stream;
     }
+    videoEl.play().catch(() => {});
+
+    const handleTrackChange = () => {
+      if (videoEl) {
+        if (videoEl.srcObject !== stream) {
+          videoEl.srcObject = stream;
+        }
+        videoEl.play().catch(() => {});
+      }
+    };
+
+    stream.addEventListener('addtrack', handleTrackChange);
+    stream.addEventListener('removetrack', handleTrackChange);
+    stream.getVideoTracks().forEach((track) => {
+      track.addEventListener('unmute', handleTrackChange);
+    });
+
+    return () => {
+      stream.removeEventListener('addtrack', handleTrackChange);
+      stream.removeEventListener('removetrack', handleTrackChange);
+      stream.getVideoTracks().forEach((track) => {
+        track.removeEventListener('unmute', handleTrackChange);
+      });
+    };
   }, [participant.stream, participant.isVideoOff]);
 
   // Sync and play remote audio stream reliably with mobile autoplay handling
@@ -128,6 +154,12 @@ export function VideoTile({
           autoPlay
           playsInline
           muted={true} // Dedicated <audio> handles remote audio; mute video to ensure autoplay never gets blocked
+          onLoadedMetadata={(e) => {
+            e.currentTarget.play().catch(() => {});
+          }}
+          onCanPlay={(e) => {
+            e.currentTarget.play().catch(() => {});
+          }}
           className={`w-full h-full object-cover ${participant.isSelf ? 'transform -scale-x-100' : ''}`}
         />
       ) : (

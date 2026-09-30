@@ -311,19 +311,20 @@ async def leave_meeting_endpoint(
     participant_id: str = Query(...),
     db: Session = Depends(get_db)
 ):
-    participant = crud.leave_meeting(db, meeting_id, participant_id)
+    clean_id = crud.clean_meeting_id(meeting_id)
+    participant = crud.leave_meeting(db, clean_id, participant_id)
     if participant:
-        await manager.broadcast(meeting_id, {
+        await manager.broadcast(clean_id, {
             "type": "PARTICIPANT_LEFT",
             "participant_id": participant_id,
             "display_name": participant.display_name
         })
 
         # If room is now empty, automatically end the meeting
-        remaining = crud.get_participants(db, meeting_id, active_only=True)
+        remaining = crud.get_participants(db, clean_id, active_only=True)
         if len(remaining) == 0:
-            crud.end_meeting(db, meeting_id)
-            await manager.broadcast(meeting_id, {
+            crud.end_meeting(db, clean_id)
+            await manager.broadcast(clean_id, {
                 "type": "MEETING_ENDED"
             })
 
@@ -383,7 +384,7 @@ async def update_participant_state(
     if not participant:
         raise HTTPException(status_code=404, detail="Participant not found")
     
-    await manager.broadcast(meeting_id, {
+    await manager.broadcast(meeting.id, {
         "type": "PARTICIPANT_UPDATED",
         "participant": {
             "id": participant.id,
@@ -529,8 +530,8 @@ async def end_meeting_endpoint(
     
     check_host_authorization(meeting, current_user)
     
-    crud.end_meeting(db, meeting_id)
-    await manager.broadcast(meeting_id, {
+    crud.end_meeting(db, meeting.id)
+    await manager.broadcast(meeting.id, {
         "type": "MEETING_ENDED"
     })
     return {"message": "Meeting ended for all"}
@@ -656,6 +657,27 @@ async def meeting_websocket(
                     "sender_id": participant_id,
                     "emoji": data.get("emoji", "👍")
                 })
+            elif event_type == "PARTICIPANT_STATUS_CHANGED":
+                is_video_off = data.get("is_video_off")
+                is_muted = data.get("is_muted")
+                is_hand_raised = data.get("is_hand_raised")
+                target_p_id = data.get("participant_id") or participant_id
+                if target_p_id:
+                    crud.update_participant_status(
+                        db, clean_id, target_p_id,
+                        is_muted=is_muted, is_video_off=is_video_off, is_hand_raised=is_hand_raised
+                    )
+                    await manager.broadcast(clean_id, {
+                        "type": "PARTICIPANT_UPDATED",
+                        "participant": {
+                            "id": target_p_id,
+                            "display_name": display_name,
+                            "role": role,
+                            "is_muted": is_muted,
+                            "is_video_off": is_video_off,
+                            "is_hand_raised": is_hand_raised
+                        }
+                    })
             elif event_type == "SCREEN_SHARE_STARTED":
                 await manager.broadcast(clean_id, {
                     "type": "SCREEN_SHARE_STARTED",

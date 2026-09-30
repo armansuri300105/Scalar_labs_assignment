@@ -15,6 +15,7 @@ import { InviteModal } from '../../../components/modals/InviteModal';
 import { Meeting, Participant, ChatMessage, SecuritySettings } from '../../../types';
 import { api } from '../../../lib/api';
 import { useToast } from '../../../context/ToastContext';
+import { useAuth } from '../../../context/AuthContext';
 import { Mic } from 'lucide-react';
 
 export default function MeetingRoomPage() {
@@ -22,6 +23,7 @@ export default function MeetingRoomPage() {
   const router = useRouter();
   const meetingId = params.meetingId as string;
   const { success, error, info } = useToast();
+  const { user } = useAuth();
 
   // Meeting State
   const [meeting, setMeeting] = useState<Meeting | null>(null);
@@ -112,10 +114,12 @@ export default function MeetingRoomPage() {
     const pc = new RTCPeerConnection(RTC_CONFIG);
     peerConnectionsRef.current.set(remoteId, pc);
 
-    // Pre-allocate audio and video transceivers with sendrecv so SDP always includes audio m-line
+    // Pre-allocate audio and video transceivers with sendrecv so SDP always includes audio and video m-lines
+    let audioTransceiver: RTCRtpTransceiver | null = null;
+    let videoTransceiver: RTCRtpTransceiver | null = null;
     try {
-      pc.addTransceiver('audio', { direction: 'sendrecv' });
-      pc.addTransceiver('video', { direction: 'sendrecv' });
+      audioTransceiver = pc.addTransceiver('audio', { direction: 'sendrecv' });
+      videoTransceiver = pc.addTransceiver('video', { direction: 'sendrecv' });
     } catch (e) {
       console.warn('Transceiver add notice:', e);
     }
@@ -124,12 +128,18 @@ export default function MeetingRoomPage() {
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => {
         try {
-          const senders = pc.getSenders();
-          const sender = senders.find((s) => s.track && s.track.kind === track.kind);
-          if (sender) {
-            sender.replaceTrack(track);
+          if (track.kind === 'audio' && audioTransceiver && audioTransceiver.sender) {
+            audioTransceiver.sender.replaceTrack(track);
+          } else if (track.kind === 'video' && videoTransceiver && videoTransceiver.sender) {
+            videoTransceiver.sender.replaceTrack(track);
           } else {
-            pc.addTrack(track, localStreamRef.current!);
+            const senders = pc.getSenders();
+            const sender = senders.find((s) => s.track && s.track.kind === track.kind);
+            if (sender) {
+              sender.replaceTrack(track);
+            } else {
+              pc.addTrack(track, localStreamRef.current!);
+            }
           }
         } catch (err) {
           console.warn('Track already added or failed:', err);
@@ -161,8 +171,10 @@ export default function MeetingRoomPage() {
       setRoomParticipants((prev) =>
         prev.map((p) => {
           if (p.id !== remoteId) return p;
-          const currentTracks = p.stream ? p.stream.getTracks().filter((t) => t.id !== remoteTrack.id) : [];
-          // Construct a fresh MediaStream instance so React state change triggers child useEffect & <audio> playback
+          const currentTracks = p.stream
+            ? p.stream.getTracks().filter((t) => t.id !== remoteTrack.id && t.kind !== remoteTrack.kind)
+            : [];
+          // Construct a fresh MediaStream instance so React state change triggers child useEffect & playback
           const updatedStream = new MediaStream([...currentTracks, remoteTrack]);
           return {
             ...p,
@@ -221,21 +233,22 @@ export default function MeetingRoomPage() {
       return null;
     }
 
-    if (preferVideo) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          },
-          video: { width: { ideal: 1280 }, height: { ideal: 720 } }
-        });
-        stream.getAudioTracks().forEach((t) => (t.enabled = !initialMuted));
-        return stream;
-      } catch (camErr) {
-        console.warn('Could not acquire camera with audio, falling back to audio only:', camErr);
-      }
+    // Always attempt to acquire both audio and camera if available.
+    // Setting videoTrack.enabled according to preferVideo allows instant video start later without renegotiation delay!
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        },
+        video: { width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      stream.getAudioTracks().forEach((t) => (t.enabled = !initialMuted));
+      stream.getVideoTracks().forEach((t) => (t.enabled = preferVideo));
+      return stream;
+    } catch (camErr) {
+      console.warn('Could not acquire camera with audio, falling back to audio only:', camErr);
     }
 
     try {
@@ -341,6 +354,9 @@ export default function MeetingRoomPage() {
 
       if (typeof window !== 'undefined') {
         sessionStorage.setItem(`zoom_participant_id_${meeting.id}`, participant.id);
+        sessionStorage.setItem(`zoom_has_joined_${meeting.id}`, 'true');
+        sessionStorage.setItem(`zoom_initial_no_audio_${meeting.id}`, String(initialMuted));
+        sessionStorage.setItem(`zoom_initial_no_video_${meeting.id}`, String(initialVideoOff));
       }
 
       // Start local media stream: microphone is ALWAYS requested, camera if enabled
@@ -411,6 +427,28 @@ export default function MeetingRoomPage() {
       setIsJoining(false);
     }
   };
+
+  // Auto-rejoin on refresh if user had previously joined this meeting session
+  const autoRejoinFiredRef = useRef(false);
+  useEffect(() => {
+    if (!meeting || hasJoined || isJoining || autoRejoinFiredRef.current) return;
+    if (typeof window === 'undefined') return;
+
+    const hadJoined = sessionStorage.getItem(`zoom_has_joined_${meeting.id}`) === 'true';
+    if (hadJoined) {
+      autoRejoinFiredRef.current = true;
+      const savedName =
+        user?.full_name ||
+        sessionStorage.getItem('zoom_display_name') ||
+        localStorage.getItem('zoom_user_name') ||
+        'Participant';
+      const savedNoAudio = sessionStorage.getItem(`zoom_initial_no_audio_${meeting.id}`) === 'true';
+      const savedNoVideo = sessionStorage.getItem(`zoom_initial_no_video_${meeting.id}`) === 'true';
+      const savedPass = sessionStorage.getItem(`zoom_passcode_${meeting.id}`) || undefined;
+
+      handleLobbyJoin(savedName, savedNoAudio, savedNoVideo, savedPass);
+    }
+  }, [meeting, hasJoined, isJoining, user]);
 
   // 3. WebSocket Connection & Signaling
   const connectWebSocket = useCallback(
@@ -940,6 +978,19 @@ export default function MeetingRoomPage() {
     setRoomParticipants((prev) =>
       prev.map((p) => (p.isSelf ? { ...p, isMuted: newMuted } : p))
     );
+
+    // Send real-time status update to all peers via WebSocket
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'PARTICIPANT_STATUS_CHANGED',
+          participant_id: selfParticipant?.id,
+          is_video_off: isVideoOff,
+          is_muted: newMuted
+        })
+      );
+    }
+
     if (selfParticipant && meeting) {
       api.updateParticipantState(meeting.id, selfParticipant.id, { is_muted: newMuted }).catch((err) => {
         if (!newMuted) {
@@ -963,19 +1014,26 @@ export default function MeetingRoomPage() {
     const newVideoOff = !isVideoOff;
     setIsVideoOff(newVideoOff);
 
-    if (localStreamRef.current) {
+    // 1. Enable/disable existing local video tracks
+    let hasLiveVideoTrack = false;
+    if (localStreamRef.current && localStreamRef.current.getVideoTracks().length > 0) {
       localStreamRef.current.getVideoTracks().forEach((track) => {
         track.enabled = !newVideoOff;
+        if (track.readyState === 'live') {
+          hasLiveVideoTrack = true;
+        }
       });
     }
 
-    if (!newVideoOff && (!localStreamRef.current || localStreamRef.current.getVideoTracks().length === 0)) {
+    // 2. If turning video on and no live video track exists yet, acquire camera
+    if (!newVideoOff && !hasLiveVideoTrack) {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 1280 }, height: { ideal: 720 } }
         });
         const newTrack = stream.getVideoTracks()[0];
         if (newTrack) {
+          newTrack.enabled = true;
           if (localStreamRef.current) {
             localStreamRef.current.addTrack(newTrack);
           } else {
@@ -984,10 +1042,14 @@ export default function MeetingRoomPage() {
           setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
 
           // Update video track on all peer connections
-          peerConnectionsRef.current.forEach((pc) => {
-            const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
-            if (sender) {
-              sender.replaceTrack(newTrack);
+          peerConnectionsRef.current.forEach((pc, peerId) => {
+            const transceivers = pc.getTransceivers();
+            const videoTransceiver = transceivers.find(
+              (t) => t.receiver.track.kind === 'video' || t.sender.track?.kind === 'video'
+            );
+            if (videoTransceiver && videoTransceiver.sender) {
+              videoTransceiver.sender.replaceTrack(newTrack);
+              videoTransceiver.direction = 'sendrecv';
             } else {
               try {
                 pc.addTrack(newTrack, localStreamRef.current!);
@@ -995,17 +1057,45 @@ export default function MeetingRoomPage() {
                 console.warn('Track add failed:', e);
               }
             }
+            if (pc.signalingState === 'stable') {
+              initiateCallToPeer(peerId);
+            }
           });
         }
       } catch (err) {
         console.warn('Failed to start camera:', err);
         setIsVideoOff(true);
+        error('Camera permission denied or camera not found.');
+        return;
       }
+    } else if (localStreamRef.current) {
+      setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
     }
 
     setRoomParticipants((prev) =>
-      prev.map((p) => (p.isSelf ? { ...p, isVideoOff: newVideoOff } : p))
+      prev.map((p) =>
+        p.isSelf
+          ? {
+              ...p,
+              isVideoOff: newVideoOff,
+              stream: localStreamRef.current ? new MediaStream(localStreamRef.current.getTracks()) : p.stream
+            }
+          : p
+      )
     );
+
+    // Send real-time status update to all peers via WebSocket
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: 'PARTICIPANT_STATUS_CHANGED',
+          participant_id: selfParticipant?.id,
+          is_video_off: newVideoOff,
+          is_muted: isMuted
+        })
+      );
+    }
+
     if (selfParticipant && meeting) {
       api.updateParticipantState(meeting.id, selfParticipant.id, { is_video_off: newVideoOff }).catch(() => {});
     }
@@ -1321,16 +1411,27 @@ export default function MeetingRoomPage() {
     }
     if (typeof window !== 'undefined' && meeting) {
       sessionStorage.removeItem(`zoom_participant_id_${meeting.id}`);
+      sessionStorage.removeItem(`zoom_has_joined_${meeting.id}`);
+      sessionStorage.removeItem(`zoom_initial_no_audio_${meeting.id}`);
+      sessionStorage.removeItem(`zoom_initial_no_video_${meeting.id}`);
     }
     router.push('/');
   };
 
-  // Loading Screen
-  if (isLoadingMeeting) {
+  // Loading Screen or Auto-Rejoining
+  const isAutoRejoining =
+    !hasJoined &&
+    typeof window !== 'undefined' &&
+    meeting &&
+    sessionStorage.getItem(`zoom_has_joined_${meeting.id}`) === 'true';
+
+  if (isLoadingMeeting || isAutoRejoining) {
     return (
       <div className="min-h-screen bg-[#111317] text-white flex flex-col items-center justify-center space-y-3">
         <div className="w-10 h-10 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-sm font-semibold text-slate-300">Loading Zoom meeting room...</p>
+        <p className="text-sm font-semibold text-slate-300">
+          {isAutoRejoining ? 'Rejoining meeting...' : 'Loading Zoom meeting room...'}
+        </p>
       </div>
     );
   }

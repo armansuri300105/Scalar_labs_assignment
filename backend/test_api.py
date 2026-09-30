@@ -422,6 +422,57 @@ def test_passcode_and_timezone_enforcement():
     assert res_owner_join.json()["role"] == "host"
     print("✓ Passcode enforcement: Authenticated owner joins seamlessly as host")
 
+def test_refresh_rejoin_deduplication():
+    # 1. Register user & create instant meeting
+    suffix = uuid.uuid4().hex[:6]
+    reg = client.post("/api/auth/register", json={
+        "email": f"rejoin_{suffix}@scalar.com",
+        "password": "Password123!",
+        "full_name": f"User Rejoin {suffix}"
+    })
+    token = reg.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    res_m = client.post("/api/meetings/instant", headers=headers, json={"title": "Rejoin Test Meeting"})
+    m_id = res_m.json()["id"]
+
+    # 2. Host joins first time
+    join_1 = client.post(f"/api/meetings/{m_id}/join", headers=headers, json={
+        "display_name": f"User Rejoin {suffix}"
+    })
+    assert join_1.status_code == 200
+    p1 = join_1.json()
+    p1_id = p1["id"]
+
+    # Check participant count is 1
+    parts_1 = client.get(f"/api/meetings/{m_id}/participants").json()
+    assert len(parts_1) == 1
+
+    # 3. Simulate browser refresh: User rejoins with participant_id in session
+    join_2 = client.post(f"/api/meetings/{m_id}/join", headers=headers, json={
+        "display_name": f"User Rejoin {suffix}",
+        "participant_id": p1_id
+    })
+    assert join_2.status_code == 200
+    p2 = join_2.json()
+    assert p2["id"] == p1_id, "Rejoining with participant_id should reuse existing record"
+
+    parts_2 = client.get(f"/api/meetings/{m_id}/participants").json()
+    assert len(parts_2) == 1, f"Expected 1 participant after refresh, got {len(parts_2)}"
+    print("✓ Rejoining with participant_id reuses record and prevents duplicates")
+
+    # 4. Simulate refresh where participant_id wasn't in storage, but same display name joins
+    join_3 = client.post(f"/api/meetings/{m_id}/join", headers=headers, json={
+        "display_name": f"User Rejoin {suffix}"
+    })
+    assert join_3.status_code == 200
+    p3 = join_3.json()
+    assert p3["id"] == p1_id, "Rejoining with same display_name in same meeting should reuse record"
+
+    parts_3 = client.get(f"/api/meetings/{m_id}/participants").json()
+    assert len(parts_3) == 1, f"Expected 1 participant after rejoining by name, got {len(parts_3)}"
+    print("✓ Rejoining by display_name reuses existing record and prevents duplicates")
+
 if __name__ == "__main__":
     print("\n==========================================")
     print("RUNNING COMPREHENSIVE SECURITY & CHAT TESTS")
@@ -434,6 +485,7 @@ if __name__ == "__main__":
     test_security_options(mid, token)
     test_reschedule_and_delete_meeting(mid, token)
     test_passcode_and_timezone_enforcement()
+    test_refresh_rejoin_deduplication()
     print("\n==========================================")
     print("ALL TESTS PASSED WITH 100% SUCCESS! 🎉")
     print("==========================================\n")

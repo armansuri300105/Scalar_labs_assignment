@@ -14,6 +14,7 @@ export interface TileParticipant {
   isHandRaised?: boolean;
   stream?: MediaStream | null;
   avatarColor?: string;
+  reaction?: string | null;
 }
 
 interface VideoTileProps {
@@ -168,6 +169,13 @@ export function VideoTile({
           <Pin className={`w-3.5 h-3.5 ${isPinned ? 'fill-current' : ''}`} />
           {isPinned && <span className="text-[10px] font-bold tracking-wide">Pinned</span>}
         </button>
+      )}
+
+      {/* Bottom Right: Reaction Badge */}
+      {participant.reaction && (
+        <div className="absolute bottom-3 right-3 z-20 flex items-center justify-center animate-bounce select-none pointer-events-none filter drop-shadow-xl bg-black/50 backdrop-blur-md p-1.5 rounded-xl border border-white/10">
+          <span className="text-2xl sm:text-3xl">{participant.reaction}</span>
+        </div>
       )}
 
       {/* Bottom Name & Mic status tag (Zoom classic) */}

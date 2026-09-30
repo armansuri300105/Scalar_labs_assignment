@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Mic,
   MicOff,
@@ -11,11 +11,8 @@ import {
   MessageSquare,
   ArrowUpFromLine,
   Smile,
-  Disc,
   PhoneOff,
-  ChevronUp,
-  Hand,
-  Settings
+  Hand
 } from 'lucide-react';
 
 interface MeetingControlsProps {
@@ -23,7 +20,6 @@ interface MeetingControlsProps {
   isVideoOff: boolean;
   isHandRaised: boolean;
   isScreenSharing: boolean;
-  isRecording?: boolean;
   isHost: boolean;
   allowShareScreen?: boolean;
   allowUnmute?: boolean;
@@ -35,7 +31,6 @@ interface MeetingControlsProps {
   onToggleVideo: () => void;
   onToggleHand: () => void;
   onToggleScreenShare: () => void;
-  onToggleRecording: () => void;
   onToggleParticipants: () => void;
   onToggleChat: () => void;
   onOpenSecurity: () => void;
@@ -49,7 +44,6 @@ export function MeetingControls({
   isVideoOff,
   isHandRaised,
   isScreenSharing,
-  isRecording = false,
   isHost,
   allowShareScreen = true,
   allowUnmute = true,
@@ -61,7 +55,6 @@ export function MeetingControls({
   onToggleVideo,
   onToggleHand,
   onToggleScreenShare,
-  onToggleRecording,
   onToggleParticipants,
   onToggleChat,
   onOpenSecurity,
@@ -71,14 +64,32 @@ export function MeetingControls({
 }: MeetingControlsProps) {
   const [showReactions, setShowReactions] = useState(false);
   const [showEndDialog, setShowEndDialog] = useState(false);
+  const reactionsRef = useRef<HTMLDivElement>(null);
 
   const emojiList = ['👏', '👍', '❤️', '😂', '😮', '🎉'];
 
+  // Close reactions popover on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
+      if (reactionsRef.current && !reactionsRef.current.contains(e.target as Node)) {
+        setShowReactions(false);
+      }
+    };
+    if (showReactions) {
+      document.addEventListener('mousedown', handleOutsideClick);
+      document.addEventListener('touchstart', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, [showReactions]);
+
   return (
     <>
-      <footer className="bg-[#181A20] border-t border-white/10 px-2 sm:px-6 py-1.5 sm:py-0 sm:h-18 text-white shrink-0 z-30 select-none flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
-        {/* Main Controls Row (on mobile: full-width options row; on desktop: left + center) */}
-        <div className="flex items-center justify-between sm:justify-start gap-1 sm:gap-4 w-full sm:w-auto overflow-x-auto no-scrollbar py-0.5">
+      <footer className="bg-[#181A20] border-t border-white/10 px-2 sm:px-6 py-1.5 sm:py-0 sm:h-18 text-white shrink-0 z-30 select-none flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2 relative overflow-visible">
+        {/* Main Controls Row (on mobile: scrollable options; on desktop/laptop: visible unclipped) */}
+        <div className="flex items-center justify-between sm:justify-start gap-1 sm:gap-4 w-full sm:w-auto overflow-x-auto sm:overflow-visible no-scrollbar py-0.5 relative">
           {/* Left: Audio & Video controls */}
           <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             {/* Mute/Unmute */}
@@ -178,45 +189,43 @@ export function MeetingControls({
               </span>
             </button>
 
-            {/* Record (Desktop only) */}
-            <button
-              onClick={onToggleRecording}
-              className={`flex flex-col items-center justify-center w-12 sm:w-16 h-12 sm:h-14 rounded-xl transition-colors cursor-pointer hidden md:flex shrink-0 ${
-                isRecording ? 'text-rose-400' : 'text-slate-200 hover:bg-white/10'
-              }`}
-            >
-              <Disc className={`w-4 h-4 sm:w-5 sm:h-5 ${isRecording ? 'animate-pulse text-rose-500' : ''}`} />
-              <span className="text-[9px] sm:text-[10px] mt-0.5 sm:mt-1 font-medium">
-                {isRecording ? 'Recording' : 'Record'}
-              </span>
-            </button>
-
             {/* Reactions (with popover) */}
-            <div className="relative shrink-0">
+            <div className="relative shrink-0" ref={reactionsRef}>
               <button
-                onClick={() => setShowReactions(!showReactions)}
-                className="flex flex-col items-center justify-center w-12 sm:w-16 h-12 sm:h-14 rounded-xl text-slate-200 hover:bg-white/10 transition-colors cursor-pointer"
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowReactions((prev) => !prev);
+                }}
+                className={`flex flex-col items-center justify-center w-12 sm:w-16 h-12 sm:h-14 rounded-xl transition-colors cursor-pointer ${
+                  showReactions ? 'bg-white/15 text-white' : 'text-slate-200 hover:bg-white/10'
+                }`}
+                title="Send Meeting Reactions"
               >
-                <Smile className="w-4 h-4 sm:w-5 sm:h-5" />
+                <Smile className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
                 <span className="text-[9px] sm:text-[10px] mt-0.5 sm:mt-1 font-medium">Reactions</span>
               </button>
 
               {/* Reactions Popover */}
               {showReactions && (
                 <div
-                  className="absolute bottom-full mb-3 right-0 sm:left-1/2 sm:-translate-x-1/2 bg-[#24272C] rounded-2xl shadow-2xl border border-white/15 p-3 flex flex-col gap-2 z-50 animate-in fade-in zoom-in-95 duration-150 max-w-[calc(100vw-1.5rem)]"
+                  className="absolute bottom-full mb-3 right-0 sm:left-1/2 sm:-translate-x-1/2 bg-[#24272C] rounded-2xl shadow-2xl border border-white/15 p-3 flex flex-col gap-2.5 z-50 animate-in fade-in zoom-in-95 duration-150 min-w-[280px] pointer-events-auto"
                   onClick={(e) => e.stopPropagation()}
                 >
+                  <div className="text-[11px] font-semibold text-slate-300 px-1">Reactions</div>
                   {/* Emojis row */}
-                  <div className="flex items-center gap-1 sm:gap-2">
+                  <div className="flex items-center justify-between gap-1 sm:gap-2 bg-black/30 p-1.5 rounded-xl border border-white/5">
                     {emojiList.map((emoji) => (
                       <button
                         key={emoji}
-                        onClick={() => {
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
                           onSendReaction(emoji);
                           setShowReactions(false);
                         }}
-                        className="text-xl sm:text-2xl p-1.5 sm:p-2 hover:scale-125 transition-transform hover:bg-white/10 rounded-xl cursor-pointer"
+                        className="text-2xl sm:text-3xl p-1.5 hover:scale-130 active:scale-95 transition-transform hover:bg-white/10 rounded-xl cursor-pointer"
+                        title={`React with ${emoji}`}
                       >
                         {emoji}
                       </button>
@@ -225,7 +234,9 @@ export function MeetingControls({
 
                   <div className="border-t border-white/10 pt-2">
                     <button
-                      onClick={() => {
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
                         onToggleHand();
                         setShowReactions(false);
                       }}

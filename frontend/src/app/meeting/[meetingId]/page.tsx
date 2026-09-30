@@ -60,7 +60,6 @@ export default function MeetingRoomPage() {
   });
   const [updatingSecurityKey, setUpdatingSecurityKey] = useState<string | null>(null);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
 
   // Chat & Reactions
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -320,19 +319,29 @@ export default function MeetingRoomPage() {
       const role = isCreatorHost ? 'host' : 'participant';
       setIsHost(role === 'host');
 
-      // Call API to join (with passcode verification)
+      // Call API to join (with passcode verification and cached participant_id to avoid duplication on refresh)
       const pass =
         enteredPasscode ||
         (typeof window !== 'undefined'
           ? sessionStorage.getItem(`zoom_passcode_${meeting.id}`) || undefined
           : undefined);
 
+      const cachedParticipantId =
+        typeof window !== 'undefined'
+          ? sessionStorage.getItem(`zoom_participant_id_${meeting.id}`) || undefined
+          : undefined;
+
       const participant = await api.joinMeeting(meeting.id, {
         display_name: displayName,
         role,
-        passcode: pass
+        passcode: pass,
+        participant_id: cachedParticipantId
       });
       setSelfParticipant(participant);
+
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(`zoom_participant_id_${meeting.id}`, participant.id);
+      }
 
       // Start local media stream: microphone is ALWAYS requested, camera if enabled
       const stream = await getMediaStream(!initialVideoOff, initialMuted);
@@ -349,7 +358,12 @@ export default function MeetingRoomPage() {
       try {
         const activeList: Participant[] = await api.getParticipants(meeting.id);
         existingPeers = (activeList || [])
-          .filter((p: Participant) => p.id !== participant.id && !p.left_at)
+          .filter(
+            (p: Participant) =>
+              p.id !== participant.id &&
+              !p.left_at &&
+              p.display_name.trim().toLowerCase() !== displayName.trim().toLowerCase()
+          )
           .map((p: Participant) => ({
             id: p.id,
             displayName: p.display_name,
@@ -540,11 +554,18 @@ export default function MeetingRoomPage() {
               cleanupAndLeave();
             } else if (data.type === 'PARTICIPANT_JOINED') {
               const newP = data.participant;
-              if (newP && newP.id !== pId) {
+              if (
+                newP &&
+                newP.id !== pId &&
+                newP.display_name.trim().toLowerCase() !== currentDisplayName.trim().toLowerCase()
+              ) {
                 setRoomParticipants((prev) => {
-                  if (prev.some((p) => p.id === newP.id)) return prev;
+                  if (prev.some((p) => p.id === newP.id || (p.isSelf && p.displayName.trim().toLowerCase() === newP.display_name.trim().toLowerCase()))) return prev;
+                  const filtered = prev.filter(
+                    (p) => !(p.displayName.trim().toLowerCase() === newP.display_name.trim().toLowerCase() && !p.isSelf)
+                  );
                   return [
-                    ...prev,
+                    ...filtered,
                     {
                       id: newP.id,
                       displayName: newP.display_name,
@@ -796,16 +817,37 @@ export default function MeetingRoomPage() {
     };
   }, [localStream, isMuted, hasJoined]);
 
-  // Trigger floating reaction animation
+  // Trigger floating reaction animation and participant tile badge
   const triggerReaction = (emoji: string, senderName: string) => {
     const id = Math.random().toString(36).substring(2, 9);
-    const leftPercent = Math.floor(20 + Math.random() * 60);
+    const leftPercent = Math.floor(15 + Math.random() * 70);
     const reactionObj: FloatingReaction = { id, emoji, senderName, leftPercent };
 
     setFloatingReactions((prev) => [...prev, reactionObj]);
     setTimeout(() => {
       setFloatingReactions((prev) => prev.filter((r) => r.id !== id));
-    }, 3000);
+    }, 3200);
+
+    // Also display the reaction badge directly on the participant's video tile
+    setRoomParticipants((prev) =>
+      prev.map((p) => {
+        const isTarget =
+          (senderName === currentDisplayName && p.isSelf) ||
+          p.displayName.trim().toLowerCase() === senderName.trim().toLowerCase();
+        return isTarget ? { ...p, reaction: emoji } : p;
+      })
+    );
+
+    setTimeout(() => {
+      setRoomParticipants((prev) =>
+        prev.map((p) => {
+          const isTarget =
+            (senderName === currentDisplayName && p.isSelf) ||
+            p.displayName.trim().toLowerCase() === senderName.trim().toLowerCase();
+          return isTarget && p.reaction === emoji ? { ...p, reaction: null } : p;
+        })
+      );
+    }, 3200);
   };
 
   // Global Audio Autoplay Unlocker for Mobile Browsers (iOS Safari & Android Chrome)
@@ -1277,6 +1319,9 @@ export default function MeetingRoomPage() {
     if (wsRef.current) {
       wsRef.current.close();
     }
+    if (typeof window !== 'undefined' && meeting) {
+      sessionStorage.removeItem(`zoom_participant_id_${meeting.id}`);
+    }
     router.push('/');
   };
 
@@ -1384,7 +1429,6 @@ export default function MeetingRoomPage() {
         isVideoOff={isVideoOff}
         isHandRaised={isHandRaised}
         isScreenSharing={!!screenShareStream}
-        isRecording={isRecording}
         isHost={isHost}
         allowShareScreen={securitySettings.allow_share_screen}
         allowUnmute={securitySettings.allow_unmute}
@@ -1396,10 +1440,6 @@ export default function MeetingRoomPage() {
         onToggleVideo={handleToggleVideo}
         onToggleHand={handleToggleHand}
         onToggleScreenShare={handleToggleScreenShare}
-        onToggleRecording={() => {
-          setIsRecording(!isRecording);
-          info(!isRecording ? 'Recording started.' : 'Recording paused.');
-        }}
         onToggleParticipants={() => {
           setIsParticipantsOpen(!isParticipantsOpen);
           if (!isParticipantsOpen) setIsChatOpen(false);

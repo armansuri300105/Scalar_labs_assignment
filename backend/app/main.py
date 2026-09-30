@@ -294,7 +294,8 @@ async def join_meeting_endpoint(
         db,
         meeting_id=meeting.id,
         display_name=payload.display_name.strip(),
-        role=role
+        role=role,
+        participant_id=payload.participant_id
     )
 
     # If meeting was scheduled, activate it

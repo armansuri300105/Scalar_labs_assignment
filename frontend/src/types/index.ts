@@ -97,4 +97,5 @@ export interface JoinMeetingInput {
   display_name: string;
   passcode?: string;
   role?: string;
+  participant_id?: string;
 }

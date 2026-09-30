@@ -86,6 +86,7 @@ class MeetingJoinRequest(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=100)
     passcode: Optional[str] = None
     role: Optional[str] = "participant"
+    participant_id: Optional[str] = None
 
     @field_validator("display_name")
     @classmethod

@@ -6,13 +6,25 @@ from typing import List, Optional
 import json
 
 from .database import engine, Base, get_db
-from . import models, schemas, crud
+from . import models, schemas, crud, auth
 from .config import CORS_ORIGINS
 from .seed import seed_database
 from .websocket_manager import manager
+from sqlalchemy import text
 
 # Initialize SQLite tables
 Base.metadata.create_all(bind=engine)
+
+# Auto-migrate SQLite schema if new columns are missing
+try:
+    with engine.connect() as conn:
+        res = conn.execute(text("PRAGMA table_info(meetings);"))
+        columns = [row[1] for row in res.fetchall()]
+        if columns and "owner_id" not in columns:
+            conn.execute(text("ALTER TABLE meetings ADD COLUMN owner_id VARCHAR;"))
+            conn.commit()
+except Exception as _e:
+    pass
 
 app = FastAPI(
     title="Zoom Clone REST API",
@@ -41,6 +53,7 @@ def enrich_meeting(m: models.Meeting) -> dict:
         "invite_token": m.invite_token,
         "passcode": m.passcode,
         "status": m.status,
+        "owner_id": m.owner_id,
         "created_at": m.created_at,
         "updated_at": m.updated_at,
         "participant_count": len([p for p in m.participants if not p.left_at]) if m.participants else 0,
@@ -67,36 +80,89 @@ def reset_database(db: Session = Depends(get_db)):
         "message": "All database records have been deleted. Database is completely fresh."
     }
 
-# --- Meetings Management ---
+# --- Authentication & Authorization Endpoints ---
+@app.post("/api/auth/register", response_model=schemas.AuthResponse, status_code=status.HTTP_201_CREATED, tags=["Auth"])
+def register(
+    payload: schemas.UserRegister,
+    db: Session = Depends(get_db)
+):
+    existing = crud.get_user_by_email(db, payload.email)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An account with this email address already exists. Please log in."
+        )
+    hashed_pwd = auth.hash_password(payload.password)
+    user = crud.create_user(
+        db,
+        email=payload.email,
+        password_hash=hashed_pwd,
+        full_name=payload.full_name
+    )
+    token = auth.create_access_token(user.id, user.email)
+    return {
+        "user": user,
+        "token": token
+    }
+
+@app.post("/api/auth/login", response_model=schemas.AuthResponse, tags=["Auth"])
+def login(
+    payload: schemas.UserLogin,
+    db: Session = Depends(get_db)
+):
+    user = crud.get_user_by_email(db, payload.email)
+    if not user or not auth.verify_password(payload.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password. Please verify your credentials."
+        )
+    token = auth.create_access_token(user.id, user.email)
+    return {
+        "user": user,
+        "token": token
+    }
+
+@app.get("/api/auth/me", response_model=schemas.UserResponse, tags=["Auth"])
+def get_me(current_user: models.User = Depends(auth.get_current_user)):
+    return current_user
+
+# --- Meetings Management (Authenticated & Authorized) ---
 @app.get("/api/meetings", response_model=List[schemas.MeetingResponse], tags=["Meetings"])
 def list_meetings(
     view: str = Query("upcoming", regex="^(upcoming|recent|all)$"),
+    current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db)
 ):
-    if view == "upcoming":
-        meetings = crud.get_upcoming_meetings(db)
-    elif view == "recent":
-        meetings = crud.get_recent_meetings(db)
-    else:
-        meetings = db.query(models.Meeting).order_by(models.Meeting.created_at.desc()).all()
-    
+    meetings = crud.get_user_meetings(db, user_id=current_user.id, user_name=current_user.full_name, view=view)
     return [enrich_meeting(m) for m in meetings]
 
 @app.post("/api/meetings/instant", response_model=schemas.MeetingResponse, status_code=status.HTTP_201_CREATED, tags=["Meetings"])
 def create_instant_meeting(
     payload: schemas.MeetingCreateInstant = schemas.MeetingCreateInstant(),
+    current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db)
 ):
-    host_name = payload.host_name.strip() if payload.host_name and payload.host_name.strip() else "Host"
-    meeting = crud.create_instant_meeting(db, title=payload.title, host_name=host_name)
+    host_name = payload.host_name.strip() if payload.host_name and payload.host_name.strip() and payload.host_name.strip() != "Host" else current_user.full_name
+    meeting = crud.create_instant_meeting(
+        db,
+        title=payload.title,
+        host_name=host_name,
+        owner_id=current_user.id
+    )
     return enrich_meeting(meeting)
 
 @app.post("/api/meetings/scheduled", response_model=schemas.MeetingResponse, status_code=status.HTTP_201_CREATED, tags=["Meetings"])
 def create_scheduled_meeting(
     payload: schemas.MeetingCreateScheduled,
+    current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db)
 ):
-    meeting = crud.create_scheduled_meeting(db, payload)
+    meeting = crud.create_scheduled_meeting(
+        db,
+        payload,
+        owner_id=current_user.id,
+        default_host_name=current_user.full_name
+    )
     return enrich_meeting(meeting)
 
 @app.post("/api/meetings/resolve", response_model=schemas.MeetingResponse, tags=["Meetings"])
@@ -153,6 +219,7 @@ def get_meeting_by_invite(
 async def join_meeting_endpoint(
     meeting_id: str,
     payload: schemas.MeetingJoinRequest,
+    current_user: Optional[models.User] = Depends(auth.get_optional_user),
     db: Session = Depends(get_db)
 ):
     meeting = crud.get_meeting(db, meeting_id)
@@ -172,9 +239,16 @@ async def join_meeting_endpoint(
                 detail="Incorrect meeting passcode."
             )
 
-    # Assign role: host if explicitly requested OR if display_name matches meeting host_name
-    is_host = (payload.role == "host" or payload.display_name.strip().lower() == meeting.host_name.strip().lower())
-    role = "host" if is_host else "participant"
+    # Assign role: If meeting has an owner_id, only the authenticated owner can be host
+    if meeting.owner_id:
+        if current_user and current_user.id == meeting.owner_id:
+            role = "host"
+        else:
+            role = "participant"
+    else:
+        # Fallback for meetings created without owner_id
+        is_host = (payload.role == "host" or payload.display_name.strip().lower() == meeting.host_name.strip().lower())
+        role = "host" if is_host else "participant"
 
     participant = crud.join_meeting(
         db,
@@ -255,15 +329,31 @@ async def update_participant_state(
     })
     return participant
 
-# --- Host Controls (Bonus Features) ---
+def check_host_authorization(meeting: models.Meeting, user: Optional[models.User]):
+    if meeting.owner_id:
+        if not user or user.id != meeting.owner_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the meeting host/owner is authorized to perform this host action."
+            )
+    elif user and user.full_name.strip().lower() != meeting.host_name.strip().lower():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the meeting host is authorized to perform this host action."
+        )
+
+# --- Host Controls (Authorized) ---
 @app.post("/api/meetings/{meeting_id}/mute-all", tags=["Host Controls"])
 async def mute_all(
     meeting_id: str,
+    current_user: Optional[models.User] = Depends(auth.get_optional_user),
     db: Session = Depends(get_db)
 ):
     meeting = crud.get_meeting(db, meeting_id)
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    check_host_authorization(meeting, current_user)
     
     crud.mute_all_participants(db, meeting.id)
     await manager.broadcast(meeting.id, {
@@ -275,11 +365,14 @@ async def mute_all(
 async def remove_participant_endpoint(
     meeting_id: str,
     participant_id: str,
+    current_user: Optional[models.User] = Depends(auth.get_optional_user),
     db: Session = Depends(get_db)
 ):
     meeting = crud.get_meeting(db, meeting_id)
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    check_host_authorization(meeting, current_user)
     
     success = crud.remove_participant(db, meeting.id, participant_id)
     if not success:
@@ -294,12 +387,16 @@ async def remove_participant_endpoint(
 @app.post("/api/meetings/{meeting_id}/end", tags=["Host Controls"])
 async def end_meeting_endpoint(
     meeting_id: str,
+    current_user: Optional[models.User] = Depends(auth.get_optional_user),
     db: Session = Depends(get_db)
 ):
-    meeting = crud.end_meeting(db, meeting_id)
+    meeting = crud.get_meeting(db, meeting_id)
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
     
+    check_host_authorization(meeting, current_user)
+    
+    crud.end_meeting(db, meeting_id)
     await manager.broadcast(meeting_id, {
         "type": "MEETING_ENDED"
     })

@@ -62,7 +62,8 @@ def resolve_meeting_query(db: Session, query_str: str) -> Optional[models.Meetin
 def create_instant_meeting(
     db: Session,
     title: Optional[str] = None,
-    host_name: str = "Host"
+    host_name: str = "Host",
+    owner_id: Optional[str] = None
 ) -> models.Meeting:
     # Ensure unique ID
     for _ in range(10):
@@ -82,6 +83,7 @@ def create_instant_meeting(
         duration_minutes=45,
         host_name=host_name,
         invite_token=token,
+        owner_id=owner_id,
         status="active"
     )
     db.add(meeting)
@@ -99,7 +101,9 @@ def create_instant_meeting(
 
 def create_scheduled_meeting(
     db: Session,
-    meeting_in: schemas.MeetingCreateScheduled
+    meeting_in: schemas.MeetingCreateScheduled,
+    owner_id: Optional[str] = None,
+    default_host_name: Optional[str] = None
 ) -> models.Meeting:
     for _ in range(10):
         mid = generate_meeting_id()
@@ -114,6 +118,8 @@ def create_scheduled_meeting(
     if sched_time.tzinfo is None:
         sched_time = sched_time.replace(tzinfo=timezone.utc)
 
+    host_name = meeting_in.host_name if meeting_in.host_name and meeting_in.host_name.strip() else (default_host_name or "Host")
+
     meeting = models.Meeting(
         id=mid,
         title=meeting_in.title,
@@ -121,9 +127,10 @@ def create_scheduled_meeting(
         meeting_type="scheduled",
         scheduled_at=sched_time,
         duration_minutes=meeting_in.duration_minutes,
-        host_name=meeting_in.host_name or "Host",
+        host_name=host_name,
         invite_token=token,
         passcode=passcode,
+        owner_id=owner_id,
         status="scheduled"
     )
     db.add(meeting)
@@ -138,6 +145,30 @@ def create_scheduled_meeting(
     db.commit()
     db.refresh(meeting)
     return meeting
+
+def get_user_meetings(
+    db: Session,
+    user_id: str,
+    user_name: Optional[str] = None,
+    view: str = "upcoming"
+) -> List[models.Meeting]:
+    """Retrieve only meetings owned by or authorized for the given user."""
+    filters = [models.Meeting.owner_id == user_id]
+    if user_name and user_name.strip():
+        filters.append(models.Meeting.host_name.ilike(user_name.strip()))
+
+    query = db.query(models.Meeting).filter(or_(*filters))
+
+    if view == "upcoming":
+        return (
+            query.filter(models.Meeting.status.in_(["scheduled", "active"]))
+            .order_by(models.Meeting.scheduled_at.asc(), models.Meeting.created_at.desc())
+            .all()
+        )
+    elif view == "recent":
+        return query.order_by(models.Meeting.created_at.desc()).limit(20).all()
+    else:
+        return query.order_by(models.Meeting.created_at.desc()).all()
 
 def get_upcoming_meetings(db: Session, limit: int = 20) -> List[models.Meeting]:
     """Retrieve scheduled or currently active meetings."""
@@ -157,6 +188,25 @@ def get_recent_meetings(db: Session, limit: int = 20) -> List[models.Meeting]:
         .limit(limit)
         .all()
     )
+
+# --- User Management CRUD ---
+def get_user_by_email(db: Session, email: str) -> Optional[models.User]:
+    return db.query(models.User).filter(models.User.email == email.strip().lower()).first()
+
+def get_user_by_id(db: Session, user_id: str) -> Optional[models.User]:
+    return db.query(models.User).filter(models.User.id == user_id).first()
+
+def create_user(db: Session, email: str, password_hash: str, full_name: str) -> models.User:
+    user = models.User(
+        email=email.strip().lower(),
+        password_hash=password_hash,
+        full_name=full_name.strip()
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
 
 def join_meeting(
     db: Session,

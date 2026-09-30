@@ -4,7 +4,11 @@ import {
   ChatMessage,
   CreateInstantMeetingInput,
   CreateScheduledMeetingInput,
-  JoinMeetingInput
+  JoinMeetingInput,
+  User,
+  AuthResponse,
+  UserRegisterInput,
+  UserLoginInput
 } from '../types';
 
 const RAW_API_URL =
@@ -21,9 +25,14 @@ class ApiError extends Error {
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
-  const headers = {
+  
+  // Attach JWT Bearer token if logged in
+  const token = typeof window !== 'undefined' ? localStorage.getItem('zoom_auth_token') : null;
+
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...(options.headers || {})
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...((options.headers as Record<string, string>) || {})
   };
 
   try {
@@ -48,6 +57,21 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 }
 
 export const api = {
+  // Auth
+  register: (data: UserRegisterInput) =>
+    request<AuthResponse>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+
+  login: (data: UserLoginInput) =>
+    request<AuthResponse>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+
+  getMe: () => request<User>('/api/auth/me'),
+
   // Health
   checkHealth: () => request<{ status: string; timestamp: string }>('/api/health'),
 

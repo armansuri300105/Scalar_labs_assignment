@@ -23,11 +23,22 @@ export function ChatPanel({
   const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Guarantee deduplication by message ID
+  const uniqueMessages = React.useMemo(() => {
+    const seen = new Set<string>();
+    return messages.filter((msg) => {
+      if (!msg.id) return true;
+      if (seen.has(msg.id)) return false;
+      seen.add(msg.id);
+      return true;
+    });
+  }, [messages]);
+
   useEffect(() => {
     if (isOpen) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [messages, isOpen]);
+  }, [uniqueMessages, isOpen]);
 
   if (!isOpen) return null;
 
@@ -61,13 +72,13 @@ export function ChatPanel({
 
       {/* Messages List */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3.5">
-        {messages.length === 0 ? (
+        {uniqueMessages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center text-xs text-slate-500 space-y-1">
             <p>No messages yet in this meeting.</p>
             <p>Send a message to say hello to everyone!</p>
           </div>
         ) : (
-          messages.map((msg) => {
+          uniqueMessages.map((msg) => {
             const isSelf = msg.sender_name === currentUserName;
             return (
               <div key={msg.id} className="space-y-1">

@@ -241,8 +241,17 @@ export default function MeetingRoomPage() {
         setIsLoadingMeeting(true);
         const data = await api.getMeetingDetails(meetingId);
         setMeeting(data);
-        if (data.chat_messages) {
-          setChatMessages(data.chat_messages);
+        if (data.chat_messages && Array.isArray(data.chat_messages)) {
+          const rawMsgs = data.chat_messages;
+          setChatMessages((prev) => {
+            const map = new Map<string, ChatMessage>();
+            for (const m of [...prev, ...rawMsgs]) {
+              if (m && m.id) map.set(m.id, m);
+            }
+            return Array.from(map.values()).sort(
+              (a, b) => new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime()
+            );
+          });
         }
       } catch (err: unknown) {
         console.error('Failed to load meeting:', err);
@@ -363,6 +372,13 @@ export default function MeetingRoomPage() {
           name
         )}&participant_id=${encodeURIComponent(pId)}&role=${role}`;
 
+        if (wsRef.current) {
+          try {
+            wsRef.current.close();
+          } catch {}
+          wsRef.current = null;
+        }
+
         const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
@@ -394,9 +410,15 @@ export default function MeetingRoomPage() {
             const data = JSON.parse(event.data);
 
             if (data.type === 'CHAT_MESSAGE') {
-              setChatMessages((prev) => [...prev, data.message]);
-              if (!isChatOpen) {
-                setUnreadChatCount((prev) => prev + 1);
+              const incoming = data.message;
+              if (incoming && incoming.id) {
+                setChatMessages((prev) => {
+                  if (prev.some((m) => m.id === incoming.id)) return prev;
+                  return [...prev, incoming];
+                });
+                if (!isChatOpen) {
+                  setUnreadChatCount((prev) => prev + 1);
+                }
               }
             } else if (data.type === 'REACTION') {
               triggerReaction(data.emoji, data.sender_name);
@@ -561,6 +583,29 @@ export default function MeetingRoomPage() {
     },
     [isChatOpen, info, error, createPeerConnection, initiateCallToPeer, cleanupPeerConnection]
   );
+
+  // Guarantee cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (wsRef.current) {
+        try {
+          wsRef.current.close();
+        } catch {}
+        wsRef.current = null;
+      }
+      peerConnectionsRef.current.forEach((pc) => {
+        try {
+          pc.close();
+        } catch {}
+      });
+      peerConnectionsRef.current.clear();
+      iceCandidatesQueueRef.current.clear();
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((track) => track.stop());
+        localStreamRef.current = null;
+      }
+    };
+  }, []);
 
   // Sync local stream with self participant tile
   useEffect(() => {

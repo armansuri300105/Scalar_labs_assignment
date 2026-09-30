@@ -10,6 +10,18 @@ def generate_uuid() -> str:
 def get_utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    full_name = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=get_utc_now, nullable=False)
+
+    meetings = relationship("Meeting", back_populates="owner", cascade="all, delete-orphan")
+
+
 class Meeting(Base):
     __tablename__ = "meetings"
 
@@ -23,13 +35,16 @@ class Meeting(Base):
     invite_token = Column(String(64), unique=True, index=True, nullable=False)
     passcode = Column(String(32), nullable=True)
     status = Column(String(50), nullable=False, default="scheduled") # "scheduled", "active", "ended"
+    owner_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=get_utc_now, nullable=False)
     updated_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now, nullable=False)
 
     # Relationships
+    owner = relationship("User", back_populates="meetings")
     participants = relationship("Participant", back_populates="meeting", cascade="all, delete-orphan")
     chat_messages = relationship("ChatMessage", back_populates="meeting", cascade="all, delete-orphan")
     activities = relationship("MeetingActivity", back_populates="meeting", cascade="all, delete-orphan")
+
 
 
 class Participant(Base):

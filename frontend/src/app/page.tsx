@@ -14,10 +14,12 @@ import { InviteModal } from '../components/modals/InviteModal';
 import { Meeting } from '../types';
 import { api } from '../lib/api';
 import { useToast } from '../context/ToastContext';
+import { useAuth } from '../context/AuthContext';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { success, error } = useToast();
+  const { success, error, info } = useToast();
+  const { user, openAuthModal } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'home' | 'meetings' | 'recordings'>('home');
   const [upcomingMeetings, setUpcomingMeetings] = useState<Meeting[]>([]);
@@ -30,8 +32,15 @@ export default function DashboardPage() {
   const [selectedInviteMeeting, setSelectedInviteMeeting] = useState<Meeting | null>(null);
   const [isStartingInstant, setIsStartingInstant] = useState(false);
 
-  // Fetch upcoming and recent meetings from FastAPI backend
+  // Fetch upcoming and recent meetings from FastAPI backend for the authenticated user
   const fetchMeetings = useCallback(async () => {
+    if (!user) {
+      setUpcomingMeetings([]);
+      setRecentMeetings([]);
+      setIsLoadingMeetings(false);
+      return;
+    }
+
     try {
       setIsLoadingMeetings(true);
       const [upcoming, recent] = await Promise.all([
@@ -45,20 +54,23 @@ export default function DashboardPage() {
     } finally {
       setIsLoadingMeetings(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     fetchMeetings();
   }, [fetchMeetings]);
 
-  // Handler: Instant meeting creation
+  // Handler: Instant meeting creation (requires authentication)
   const handleStartInstantMeeting = async () => {
+    if (!user) {
+      info('Please sign in or create an account to start a new meeting.');
+      openAuthModal('login');
+      return;
+    }
+
     try {
       setIsStartingInstant(true);
-      const hostName =
-        (typeof window !== 'undefined' &&
-          (localStorage.getItem('zoom_user_name') || sessionStorage.getItem('zoom_display_name'))) ||
-        'Host User';
+      const hostName = user.full_name || 'Host User';
 
       const meeting = await api.createInstantMeeting({
         title: `${hostName}'s Instant Meeting`,
@@ -80,6 +92,16 @@ export default function DashboardPage() {
       error((err as Error).message || 'Failed to start instant meeting.');
       setIsStartingInstant(false);
     }
+  };
+
+  // Handler: Open Schedule Modal (requires authentication)
+  const handleOpenScheduleModal = () => {
+    if (!user) {
+      info('Please sign in or create an account to schedule meetings.');
+      openAuthModal('login');
+      return;
+    }
+    setIsScheduleModalOpen(true);
   };
 
   // Handler: Join meeting from card or modal
@@ -118,7 +140,7 @@ export default function DashboardPage() {
                 <QuickActions
                   onStartInstantMeeting={handleStartInstantMeeting}
                   onOpenJoinModal={() => setIsJoinModalOpen(true)}
-                  onOpenScheduleModal={() => setIsScheduleModalOpen(true)}
+                  onOpenScheduleModal={handleOpenScheduleModal}
                   onShareScreen={handleShareScreen}
                   isStartingInstant={isStartingInstant}
                 />
@@ -130,13 +152,34 @@ export default function DashboardPage() {
               </div>
             </div>
 
+            {/* Guest Banner if not signed in */}
+            {!user && (
+              <div className="bg-gradient-to-r from-blue-600/10 via-indigo-600/10 to-blue-500/5 border border-blue-500/20 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                    Guest Access Enabled
+                  </h3>
+                  <p className="text-xs text-slate-600 dark:text-slate-300">
+                    You can join any meeting with a Meeting ID or link without signing in. To create, host, or schedule your own meetings, sign in or create an account.
+                  </p>
+                </div>
+                <button
+                  onClick={() => openAuthModal('login')}
+                  className="px-4 py-2 bg-[#0E71EB] hover:bg-blue-600 text-white rounded-xl text-xs font-semibold shrink-0 transition-colors shadow-sm cursor-pointer"
+                >
+                  Sign In / Register
+                </button>
+              </div>
+            )}
+
             {/* Meetings Lists: Upcoming & Recent */}
             <div className="grid grid-cols-1 gap-8">
               {/* Upcoming Meetings */}
               <UpcomingMeetings
                 meetings={upcomingMeetings}
                 isLoading={isLoadingMeetings}
-                onOpenScheduleModal={() => setIsScheduleModalOpen(true)}
+                onOpenScheduleModal={handleOpenScheduleModal}
                 onOpenInviteModal={(meeting) => setSelectedInviteMeeting(meeting)}
                 onJoinMeeting={handleJoinMeeting}
               />

@@ -6,6 +6,7 @@ import { Video, MicOff, VideoOff, ArrowRight, AlertCircle, Loader2 } from 'lucid
 import { Modal } from '../ui/Modal';
 import { api } from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
 
 interface JoinModalProps {
   isOpen: boolean;
@@ -16,14 +17,23 @@ interface JoinModalProps {
 export function JoinModal({ isOpen, onClose, initialMeetingId = '' }: JoinModalProps) {
   const router = useRouter();
   const { error } = useToast();
+  const { user } = useAuth();
 
   const [query, setQuery] = useState(initialMeetingId);
   const [displayName, setDisplayName] = useState(() => {
+    if (user?.full_name) return user.full_name;
     if (typeof window !== 'undefined') {
       return sessionStorage.getItem('zoom_display_name') || localStorage.getItem('zoom_user_name') || '';
     }
     return '';
   });
+
+  React.useEffect(() => {
+    if (user?.full_name) {
+      setDisplayName(user.full_name);
+    }
+  }, [user]);
+
   const [passcode, setPasscode] = useState('');
   const [noAudio, setNoAudio] = useState(false);
   const [noVideo, setNoVideo] = useState(false);

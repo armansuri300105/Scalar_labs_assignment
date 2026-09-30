@@ -47,14 +47,14 @@ class ChatMessageResponse(BaseModel):
 # --- Meeting Schemas ---
 class MeetingCreateInstant(BaseModel):
     title: Optional[str] = "Instant Meeting"
-    host_name: Optional[str] = "Host"
+    host_name: Optional[str] = None
 
 class MeetingCreateScheduled(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
     scheduled_at: datetime
     duration_minutes: int = Field(default=30, gt=0, le=1440)
-    host_name: Optional[str] = "Host"
+    host_name: Optional[str] = None
     passcode: Optional[str] = None
 
     @field_validator("title")
@@ -90,6 +90,7 @@ class MeetingResponse(BaseModel):
     invite_token: str
     passcode: Optional[str] = None
     status: str
+    owner_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     participant_count: Optional[int] = 0
@@ -106,3 +107,47 @@ class HealthResponse(BaseModel):
     status: str
     timestamp: datetime
     version: str = "1.0.0"
+
+# --- Authentication & User Schemas ---
+class UserRegister(BaseModel):
+    email: str = Field(..., min_length=3, max_length=255)
+    password: str = Field(..., min_length=6, max_length=128)
+    full_name: str = Field(..., min_length=1, max_length=100)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email_format(cls, v: str) -> str:
+        clean = v.strip().lower()
+        if "@" not in clean or "." not in clean:
+            raise ValueError("Please provide a valid email address.")
+        return clean
+
+    @field_validator("full_name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Full name cannot be blank.")
+        return v.strip()
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+    @field_validator("email")
+    @classmethod
+    def validate_email_format(cls, v: str) -> str:
+        return v.strip().lower()
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    full_name: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class AuthResponse(BaseModel):
+    user: UserResponse
+    token: str
+

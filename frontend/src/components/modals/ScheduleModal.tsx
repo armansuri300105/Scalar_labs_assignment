@@ -6,6 +6,7 @@ import { Modal } from '../ui/Modal';
 import { api } from '../../lib/api';
 import { Meeting } from '../../types';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
 
 interface ScheduleModalProps {
   isOpen: boolean;
@@ -15,6 +16,7 @@ interface ScheduleModalProps {
 
 export function ScheduleModal({ isOpen, onClose, onMeetingScheduled }: ScheduleModalProps) {
   const { success, error } = useToast();
+  const { user, openAuthModal } = useAuth();
 
   const now = new Date();
   const defaultDate = now.toISOString().split('T')[0];
@@ -23,11 +25,19 @@ export function ScheduleModal({ isOpen, onClose, onMeetingScheduled }: ScheduleM
 
   const [title, setTitle] = useState('');
   const [hostName, setHostName] = useState(() => {
+    if (user?.full_name) return user.full_name;
     if (typeof window !== 'undefined') {
       return localStorage.getItem('zoom_user_name') || sessionStorage.getItem('zoom_display_name') || 'Host User';
     }
     return 'Host User';
   });
+
+  React.useEffect(() => {
+    if (user?.full_name) {
+      setHostName(user.full_name);
+    }
+  }, [user]);
+
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(defaultDate);
   const [time, setTime] = useState(defaultTime);
@@ -40,6 +50,12 @@ export function ScheduleModal({ isOpen, onClose, onMeetingScheduled }: ScheduleM
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!user) {
+      error('Please sign in or create an account to schedule a meeting.');
+      openAuthModal('login');
+      return;
+    }
 
     if (!title.trim()) {
       error('Please enter a meeting topic.');

@@ -6,6 +6,7 @@ import { Mic, MicOff, Video, VideoOff, Settings, Shield, ArrowLeft, Loader2 } fr
 import { Meeting } from '../../types';
 import { formatMeetingId } from '../../lib/utils';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
 
 interface PreJoinLobbyProps {
   meeting: Meeting;
@@ -16,6 +17,7 @@ interface PreJoinLobbyProps {
 export function PreJoinLobby({ meeting, onJoin, isJoining }: PreJoinLobbyProps) {
   const router = useRouter();
   const { error } = useToast();
+  const { user } = useAuth();
 
   const [displayName, setDisplayName] = useState('');
   const [isMuted, setIsMuted] = useState(false);
@@ -26,17 +28,21 @@ export function PreJoinLobby({ meeting, onJoin, isJoining }: PreJoinLobbyProps) 
   const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
-    // Read initial preferences if stored
-    if (typeof window !== 'undefined') {
+    // Read initial preferences if stored or use logged-in user
+    if (user?.full_name) {
+      setDisplayName(user.full_name);
+    } else if (typeof window !== 'undefined') {
       const savedName = sessionStorage.getItem('zoom_display_name') || localStorage.getItem('zoom_user_name');
       if (savedName) setDisplayName(savedName);
+    }
 
+    if (typeof window !== 'undefined') {
       const noAudio = sessionStorage.getItem('zoom_initial_no_audio') === 'true';
       const noVideo = sessionStorage.getItem('zoom_initial_no_video') === 'true';
       if (noAudio) setIsMuted(true);
       if (noVideo) setIsVideoOff(true);
     }
-  }, []);
+  }, [user]);
 
   // Handle local camera preview
   useEffect(() => {

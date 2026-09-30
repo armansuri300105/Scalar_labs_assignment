@@ -12,6 +12,11 @@ class MeetingConnectionManager:
         if meeting_id not in self.rooms:
             self.rooms[meeting_id] = []
         
+        # Remove any stale connection for this same participant ID to prevent duplicate listeners
+        pid = participant_info.get("id")
+        if pid:
+            self.rooms[meeting_id] = [e for e in self.rooms[meeting_id] if e["info"].get("id") != pid]
+
         self.rooms[meeting_id].append({
             "ws": websocket,
             "info": participant_info

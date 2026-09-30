@@ -100,12 +100,12 @@ export function VideoGrid({
   const count = participants.length;
   let gridColsClass = 'grid-cols-1';
   if (count === 2) gridColsClass = 'grid-cols-1 sm:grid-cols-2';
-  else if (count >= 3 && count <= 4) gridColsClass = 'grid-cols-1 sm:grid-cols-2';
+  else if (count >= 3 && count <= 4) gridColsClass = 'grid-cols-2';
   else if (count >= 5) gridColsClass = 'grid-cols-2 sm:grid-cols-3';
 
   return (
-    <div className="flex-1 p-3 sm:p-6 overflow-y-auto flex items-center justify-center min-h-0">
-      <div className={`grid ${gridColsClass} gap-3 sm:gap-4 w-full max-w-6xl max-h-full items-center justify-center`}>
+    <div className="flex-1 p-2 sm:p-6 overflow-y-auto flex items-start sm:items-center justify-center min-h-0">
+      <div className={`grid ${gridColsClass} gap-2 sm:gap-4 w-full max-w-6xl my-auto items-center justify-center`}>
         {participants.map((p) => (
           <VideoTile
             key={p.id}

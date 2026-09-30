@@ -107,11 +107,25 @@ export default function MeetingRoomPage() {
     const pc = new RTCPeerConnection(RTC_CONFIG);
     peerConnectionsRef.current.set(remoteId, pc);
 
+    // Pre-allocate audio and video transceivers with sendrecv so SDP always includes audio m-line
+    try {
+      pc.addTransceiver('audio', { direction: 'sendrecv' });
+      pc.addTransceiver('video', { direction: 'sendrecv' });
+    } catch (e) {
+      console.warn('Transceiver add notice:', e);
+    }
+
     // Attach local audio & video tracks to this peer connection
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => {
         try {
-          pc.addTrack(track, localStreamRef.current!);
+          const senders = pc.getSenders();
+          const sender = senders.find((s) => s.track && s.track.kind === track.kind);
+          if (sender) {
+            sender.replaceTrack(track);
+          } else {
+            pc.addTrack(track, localStreamRef.current!);
+          }
         } catch (err) {
           console.warn('Track already added or failed:', err);
         }
@@ -137,21 +151,17 @@ export default function MeetingRoomPage() {
     // Receive incoming remote audio and video tracks
     pc.ontrack = (event) => {
       console.log(`Received remote track (${event.track.kind}) from ${remoteId}`);
-      const remoteStream =
-        event.streams && event.streams[0] ? event.streams[0] : new MediaStream([event.track]);
+      const remoteTrack = event.track;
 
       setRoomParticipants((prev) =>
         prev.map((p) => {
           if (p.id !== remoteId) return p;
-          let currentStream = p.stream;
-          if (!currentStream) {
-            currentStream = remoteStream;
-          } else if (!currentStream.getTracks().some((t) => t.id === event.track.id)) {
-            currentStream.addTrack(event.track);
-          }
+          const currentTracks = p.stream ? p.stream.getTracks().filter((t) => t.id !== remoteTrack.id) : [];
+          // Construct a fresh MediaStream instance so React state change triggers child useEffect & <audio> playback
+          const updatedStream = new MediaStream([...currentTracks, remoteTrack]);
           return {
             ...p,
-            stream: currentStream
+            stream: updatedStream
           };
         })
       );
@@ -503,8 +513,10 @@ export default function MeetingRoomPage() {
                   ];
                 });
                 info(`${newP.display_name} joined the meeting.`);
-                // Initiate WebRTC call to newcomer
-                initiateCallToPeer(newP.id);
+                const pc = peerConnectionsRef.current.get(newP.id);
+                if (!pc || pc.signalingState === 'stable') {
+                  initiateCallToPeer(newP.id);
+                }
               }
             } else if (data.type === 'SIGNAL') {
               const senderId = data.sender;
@@ -515,6 +527,17 @@ export default function MeetingRoomPage() {
                 (async () => {
                   try {
                     const pc = createPeerConnection(senderId);
+                    const isPolite = pId > senderId;
+                    const offerCollision = pc.signalingState !== 'stable';
+                    if (offerCollision) {
+                      if (!isPolite) {
+                        console.warn(`Ignoring colliding offer from ${senderId} (impolite peer)`);
+                        return;
+                      }
+                      console.log(`Polite rollback for offer collision with ${senderId}`);
+                      await pc.setLocalDescription({ type: 'rollback' });
+                    }
+
                     await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
 
                     // Drain queued ICE candidates
@@ -551,7 +574,7 @@ export default function MeetingRoomPage() {
                 (async () => {
                   try {
                     const pc = peerConnectionsRef.current.get(senderId);
-                    if (pc) {
+                    if (pc && pc.signalingState === 'have-local-offer') {
                       await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
 
                       // Drain queued ICE candidates
@@ -585,7 +608,10 @@ export default function MeetingRoomPage() {
                   }
                 })();
               } else if (payload.type === 'peer-ready') {
-                initiateCallToPeer(senderId);
+                const pc = peerConnectionsRef.current.get(senderId);
+                if (!pc || pc.signalingState === 'stable') {
+                  initiateCallToPeer(senderId);
+                }
               }
             } else if (data.type === 'PARTICIPANT_UPDATED') {
               const updated = data.participant;
@@ -731,8 +757,43 @@ export default function MeetingRoomPage() {
     }, 3000);
   };
 
+  // Global Audio Autoplay Unlocker for Mobile Browsers (iOS Safari & Android Chrome)
+  useEffect(() => {
+    if (!hasJoined) return;
+
+    const unlockAudio = () => {
+      // Resume any suspended AudioContext
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (AudioCtx) {
+        try {
+          const dummy = new AudioCtx();
+          if (dummy.state === 'suspended') {
+            dummy.resume().catch(() => {});
+          }
+        } catch {}
+      }
+
+      // Play all remote audio elements
+      document.querySelectorAll('audio').forEach((el) => {
+        if (el.paused && el.srcObject) {
+          el.play().catch(() => {});
+        }
+      });
+    };
+
+    window.addEventListener('click', unlockAudio, { passive: true });
+    window.addEventListener('touchstart', unlockAudio, { passive: true });
+
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+  }, [hasJoined]);
+
   // Toggle Mute
-  const handleToggleMute = () => {
+  const handleToggleMute = async () => {
     if (isMuted && !isHost && !securitySettings.allow_unmute) {
       error('The host has not allowed participants to unmute themselves.');
       return;
@@ -744,6 +805,45 @@ export default function MeetingRoomPage() {
         track.enabled = !newMuted;
       });
     }
+
+    // If unmuting and no audio track exists yet (e.g. mobile joined without mic permission initially)
+    if (!newMuted && (!localStreamRef.current || localStreamRef.current.getAudioTracks().length === 0)) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          video: false
+        });
+        const newTrack = stream.getAudioTracks()[0];
+        if (newTrack) {
+          if (localStreamRef.current) {
+            localStreamRef.current.addTrack(newTrack);
+          } else {
+            localStreamRef.current = stream;
+          }
+          setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+
+          // Update audio track on all peer connections
+          peerConnectionsRef.current.forEach((pc) => {
+            const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'audio');
+            if (sender) {
+              sender.replaceTrack(newTrack);
+            } else {
+              try {
+                pc.addTrack(newTrack, localStreamRef.current!);
+              } catch (e) {
+                console.warn('Audio track add failed:', e);
+              }
+            }
+          });
+        }
+      } catch (micErr) {
+        console.warn('Could not acquire microphone:', micErr);
+        setIsMuted(true);
+        error('Microphone access was denied or not available.');
+        return;
+      }
+    }
+
     setRoomParticipants((prev) =>
       prev.map((p) => (p.isSelf ? { ...p, isMuted: newMuted } : p))
     );

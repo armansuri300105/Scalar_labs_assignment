@@ -57,7 +57,7 @@ export function ChatPanel({
   };
 
   return (
-    <div className="w-80 sm:w-88 bg-[#1E2024] border-l border-white/10 flex flex-col h-full z-20 shrink-0 text-white select-none">
+    <div className="fixed inset-0 sm:static sm:w-88 bg-[#1E2024] border-l border-white/10 flex flex-col h-full z-40 sm:z-20 shrink-0 text-white select-none shadow-2xl">
       {/* Header */}
       <div className="h-14 px-4 border-b border-white/10 flex items-center justify-between">
         <h3 className="font-semibold text-sm">Meeting Chat</h3>

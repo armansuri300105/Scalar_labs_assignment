@@ -76,21 +76,21 @@ export function MeetingControls({
 
   return (
     <>
-      <footer className="h-18 bg-[#181A20] border-t border-white/10 px-4 sm:px-6 flex items-center justify-between text-white shrink-0 z-30 select-none">
+      <footer className="min-h-[4.25rem] pb-[max(0.5rem,env(safe-area-inset-bottom))] bg-[#181A20] border-t border-white/10 px-2 sm:px-6 flex items-center justify-between text-white shrink-0 z-30 select-none gap-1 sm:gap-2">
         {/* Left: Audio & Video controls with popovers */}
-        <div className="flex items-center gap-1 sm:gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {/* Mute/Unmute */}
           <div className="flex items-center">
             <button
               onClick={onToggleMute}
-              className={`flex flex-col items-center justify-center w-14 sm:w-16 h-14 rounded-xl transition-all cursor-pointer ${
+              className={`flex flex-col items-center justify-center w-12 sm:w-16 h-12 sm:h-14 rounded-xl transition-all cursor-pointer ${
                 isMuted
                   ? 'text-rose-400 hover:bg-white/10'
                   : 'text-slate-200 hover:bg-white/10'
               }`}
             >
-              {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5 text-slate-100" />}
-              <span className="text-[10px] mt-1 font-medium">
+              {isMuted ? <MicOff className="w-4 h-4 sm:w-5 sm:h-5" /> : <Mic className="w-4 h-4 sm:w-5 sm:h-5 text-slate-100" />}
+              <span className="text-[9px] sm:text-[10px] mt-0.5 sm:mt-1 font-medium">
                 {isMuted ? 'Unmute' : 'Mute'}
               </span>
             </button>
@@ -100,44 +100,44 @@ export function MeetingControls({
           <div className="flex items-center">
             <button
               onClick={onToggleVideo}
-              className={`flex flex-col items-center justify-center w-14 sm:w-16 h-14 rounded-xl transition-all cursor-pointer ${
+              className={`flex flex-col items-center justify-center w-12 sm:w-16 h-12 sm:h-14 rounded-xl transition-all cursor-pointer ${
                 isVideoOff
                   ? 'text-rose-400 hover:bg-white/10'
                   : 'text-slate-200 hover:bg-white/10'
               }`}
             >
-              {isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5 text-slate-100" />}
-              <span className="text-[10px] mt-1 font-medium">
+              {isVideoOff ? <VideoOff className="w-4 h-4 sm:w-5 sm:h-5" /> : <Video className="w-4 h-4 sm:w-5 sm:h-5 text-slate-100" />}
+              <span className="text-[9px] sm:text-[10px] mt-0.5 sm:mt-1 font-medium whitespace-nowrap">
                 {isVideoOff ? 'Start Video' : 'Stop Video'}
               </span>
             </button>
           </div>
         </div>
 
-        {/* Center: Main Meeting Tool Icons */}
-        <div className="flex items-center gap-1 sm:gap-2">
+        {/* Center: Main Meeting Tool Icons (Scrollable on small mobile screens) */}
+        <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar py-1">
           {/* Security (Host Only) */}
           {isHost && (
             <button
               onClick={onOpenSecurity}
-              className="flex flex-col items-center justify-center w-14 sm:w-16 h-14 rounded-xl text-slate-200 hover:bg-white/10 transition-colors cursor-pointer"
+              className="flex flex-col items-center justify-center w-12 sm:w-16 h-12 sm:h-14 rounded-xl text-slate-200 hover:bg-white/10 transition-colors cursor-pointer shrink-0"
               title="Meeting Security Options (Host Only)"
             >
-              <Shield className="w-5 h-5 text-emerald-400" />
-              <span className="text-[10px] mt-1 font-medium text-emerald-400">Security</span>
+              <Shield className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
+              <span className="text-[9px] sm:text-[10px] mt-0.5 sm:mt-1 font-medium text-emerald-400">Security</span>
             </button>
           )}
 
           {/* Participants */}
           <button
             onClick={onToggleParticipants}
-            className={`flex flex-col items-center justify-center w-14 sm:w-16 h-14 rounded-xl transition-colors relative cursor-pointer ${
+            className={`flex flex-col items-center justify-center w-12 sm:w-16 h-12 sm:h-14 rounded-xl transition-colors relative cursor-pointer shrink-0 ${
               isParticipantsOpen ? 'bg-white/15 text-white' : 'text-slate-200 hover:bg-white/10'
             }`}
           >
-            <Users className="w-5 h-5" />
-            <span className="text-[10px] mt-1 font-medium">Participants</span>
-            <span className="absolute top-1.5 right-2 px-1.5 py-0.2 rounded-full bg-blue-500 text-[10px] font-bold text-white shadow-xs">
+            <Users className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span className="text-[9px] sm:text-[10px] mt-0.5 sm:mt-1 font-medium">Participants</span>
+            <span className="absolute top-1 sm:top-1.5 right-1 sm:right-2 px-1 sm:px-1.5 py-0.2 rounded-full bg-blue-500 text-[9px] sm:text-[10px] font-bold text-white shadow-xs">
               {participantCount}
             </span>
           </button>
@@ -145,14 +145,14 @@ export function MeetingControls({
           {/* Chat */}
           <button
             onClick={onToggleChat}
-            className={`flex flex-col items-center justify-center w-14 sm:w-16 h-14 rounded-xl transition-colors relative cursor-pointer ${
+            className={`flex flex-col items-center justify-center w-12 sm:w-16 h-12 sm:h-14 rounded-xl transition-colors relative cursor-pointer shrink-0 ${
               isChatOpen ? 'bg-white/15 text-white' : 'text-slate-200 hover:bg-white/10'
             }`}
           >
-            <MessageSquare className="w-5 h-5" />
-            <span className="text-[10px] mt-1 font-medium">Chat</span>
+            <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span className="text-[9px] sm:text-[10px] mt-0.5 sm:mt-1 font-medium">Chat</span>
             {unreadChatCount > 0 && !isChatOpen && (
-              <span className="absolute top-1.5 right-2 px-1.5 py-0.2 rounded-full bg-rose-500 text-[10px] font-bold text-white animate-pulse">
+              <span className="absolute top-1 sm:top-1.5 right-1 sm:right-2 px-1 sm:px-1.5 py-0.2 rounded-full bg-rose-500 text-[9px] sm:text-[10px] font-bold text-white animate-pulse">
                 {unreadChatCount}
               </span>
             )}
@@ -161,7 +161,7 @@ export function MeetingControls({
           {/* Share Screen (Zoom iconic Green button) */}
           <button
             onClick={onToggleScreenShare}
-            className={`flex flex-col items-center justify-center w-14 sm:w-16 h-14 rounded-xl transition-colors cursor-pointer ${
+            className={`flex flex-col items-center justify-center w-12 sm:w-16 h-12 sm:h-14 rounded-xl transition-colors cursor-pointer shrink-0 ${
               !isHost && !allowShareScreen
                 ? 'opacity-40 text-slate-500 hover:bg-transparent cursor-not-allowed'
                 : isScreenSharing
@@ -170,43 +170,43 @@ export function MeetingControls({
             }`}
             title={!isHost && !allowShareScreen ? 'Screen sharing has been disabled by the host' : isScreenSharing ? 'Stop Screen Sharing' : 'Share Screen'}
           >
-            <ArrowUpFromLine className="w-5 h-5" />
-            <span className="text-[10px] mt-1 font-medium text-emerald-400">
-              {isScreenSharing ? 'Stop Share' : 'Share Screen'}
+            <ArrowUpFromLine className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span className="text-[9px] sm:text-[10px] mt-0.5 sm:mt-1 font-medium text-emerald-400 whitespace-nowrap">
+              {isScreenSharing ? 'Stop Share' : 'Share'}
             </span>
           </button>
 
           {/* Record */}
           <button
             onClick={onToggleRecording}
-            className={`flex flex-col items-center justify-center w-14 sm:w-16 h-14 rounded-xl transition-colors cursor-pointer hidden md:flex ${
+            className={`flex flex-col items-center justify-center w-12 sm:w-16 h-12 sm:h-14 rounded-xl transition-colors cursor-pointer hidden md:flex shrink-0 ${
               isRecording ? 'text-rose-400' : 'text-slate-200 hover:bg-white/10'
             }`}
           >
-            <Disc className={`w-5 h-5 ${isRecording ? 'animate-pulse text-rose-500' : ''}`} />
-            <span className="text-[10px] mt-1 font-medium">
+            <Disc className={`w-4 h-4 sm:w-5 sm:h-5 ${isRecording ? 'animate-pulse text-rose-500' : ''}`} />
+            <span className="text-[9px] sm:text-[10px] mt-0.5 sm:mt-1 font-medium">
               {isRecording ? 'Recording' : 'Record'}
             </span>
           </button>
 
           {/* Reactions (with popover) */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <button
               onClick={() => setShowReactions(!showReactions)}
-              className="flex flex-col items-center justify-center w-14 sm:w-16 h-14 rounded-xl text-slate-200 hover:bg-white/10 transition-colors cursor-pointer"
+              className="flex flex-col items-center justify-center w-12 sm:w-16 h-12 sm:h-14 rounded-xl text-slate-200 hover:bg-white/10 transition-colors cursor-pointer"
             >
-              <Smile className="w-5 h-5" />
-              <span className="text-[10px] mt-1 font-medium">Reactions</span>
+              <Smile className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span className="text-[9px] sm:text-[10px] mt-0.5 sm:mt-1 font-medium">Reactions</span>
             </button>
 
             {/* Reactions Popover */}
             {showReactions && (
               <div
-                className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-[#24272C] rounded-2xl shadow-2xl border border-white/15 p-3 flex flex-col gap-2 z-50 animate-in fade-in zoom-in-95 duration-150"
+                className="absolute bottom-full mb-3 right-0 sm:left-1/2 sm:-translate-x-1/2 bg-[#24272C] rounded-2xl shadow-2xl border border-white/15 p-3 flex flex-col gap-2 z-50 animate-in fade-in zoom-in-95 duration-150 max-w-[calc(100vw-1.5rem)]"
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* Emojis row */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 sm:gap-2">
                   {emojiList.map((emoji) => (
                     <button
                       key={emoji}
@@ -214,7 +214,7 @@ export function MeetingControls({
                         onSendReaction(emoji);
                         setShowReactions(false);
                       }}
-                      className="text-2xl p-2 hover:scale-125 transition-transform hover:bg-white/10 rounded-xl cursor-pointer"
+                      className="text-xl sm:text-2xl p-1.5 sm:p-2 hover:scale-125 transition-transform hover:bg-white/10 rounded-xl cursor-pointer"
                     >
                       {emoji}
                     </button>
@@ -243,10 +243,10 @@ export function MeetingControls({
         </div>
 
         {/* Right: End / Leave Button (Zoom iconic red button) */}
-        <div className="flex items-center">
+        <div className="flex items-center shrink-0">
           <button
             onClick={() => setShowEndDialog(true)}
-            className="px-4 py-2 sm:px-5 sm:py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-bold shadow-md shadow-rose-600/30 transition-all cursor-pointer"
+            className="px-3 py-1.5 sm:px-5 sm:py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-[11px] sm:text-xs font-bold shadow-md shadow-rose-600/30 transition-all cursor-pointer whitespace-nowrap"
           >
             {isHost ? 'End' : 'Leave'}
           </button>

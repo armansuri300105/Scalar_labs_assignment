@@ -64,11 +64,11 @@ export function MeetingHeader({ meeting, viewMode, onToggleViewMode }: MeetingHe
           <span className="hidden sm:inline">Info</span>
         </button>
 
-        <div className="flex items-center gap-2">
-          <span className="font-semibold text-sm text-slate-100 truncate max-w-xs sm:max-w-md">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-semibold text-sm text-slate-100 truncate max-w-[130px] xs:max-w-[200px] sm:max-w-md">
             {meeting.title}
           </span>
-          <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/10 text-[11px] font-mono text-slate-300">
+          <span className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/10 text-[11px] font-mono text-slate-300 shrink-0">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             {formatTimer(secondsElapsed)}
           </span>
@@ -77,7 +77,7 @@ export function MeetingHeader({ meeting, viewMode, onToggleViewMode }: MeetingHe
         {/* Meeting Info Popup (Zoom classic top-left modal) */}
         {showInfo && (
           <div
-            className="absolute top-full left-0 mt-2 w-80 sm:w-96 bg-[#24272C] rounded-2xl shadow-2xl border border-white/15 p-5 z-50 text-xs space-y-4 animate-in fade-in zoom-in-95 duration-150"
+            className="absolute top-full left-0 mt-2 w-80 sm:w-96 max-w-[calc(100vw-2rem)] bg-[#24272C] rounded-2xl shadow-2xl border border-white/15 p-4 sm:p-5 z-50 text-xs space-y-4 animate-in fade-in zoom-in-95 duration-150"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between pb-2 border-b border-white/10">

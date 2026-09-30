@@ -36,85 +36,50 @@ export function VideoTile({
   // Sync video stream
   useEffect(() => {
     if (videoRef.current && participant.stream && !participant.isVideoOff) {
-      videoRef.current.srcObject = participant.stream;
+      if (videoRef.current.srcObject !== participant.stream) {
+        videoRef.current.srcObject = participant.stream;
+      }
     }
   }, [participant.stream, participant.isVideoOff]);
 
-  // Sync and play remote audio stream
+  // Sync and play remote audio stream reliably with mobile autoplay handling
   useEffect(() => {
     if (participant.isSelf || !participant.stream) return;
 
+    const stream = participant.stream;
+    const audioEl = audioRef.current;
+    if (!audioEl) return;
+
     const playAudio = () => {
-      if (audioRef.current && participant.stream) {
-        audioRef.current.srcObject = participant.stream;
-        audioRef.current.play().catch((err) => {
-          console.warn(`Autoplay audio notice for ${participant.displayName}:`, err);
-        });
+      if (!audioEl) return;
+      if (audioEl.srcObject !== stream) {
+        audioEl.srcObject = stream;
       }
+      audioEl.volume = 1.0;
+      audioEl.play().catch((err) => {
+        console.warn(`Autoplay audio notice for ${participant.displayName}:`, err);
+        // Mobile browser autoplay policy: retry immediately on user's first screen tap or click
+        const unlockOnTouch = () => {
+          if (audioEl && audioEl.paused) {
+            audioEl.play().catch(() => {});
+          }
+          window.removeEventListener('click', unlockOnTouch);
+          window.removeEventListener('touchstart', unlockOnTouch);
+        };
+        window.addEventListener('click', unlockOnTouch, { once: true });
+        window.addEventListener('touchstart', unlockOnTouch, { once: true });
+      });
     };
 
     playAudio();
-    participant.stream.addEventListener('addtrack', playAudio);
+
+    // Listen for new tracks added to this stream
+    stream.addEventListener('addtrack', playAudio);
 
     return () => {
-      if (participant.stream) {
-        participant.stream.removeEventListener('addtrack', playAudio);
-      }
+      stream.removeEventListener('addtrack', playAudio);
     };
   }, [participant.stream, participant.isSelf, participant.displayName]);
-
-  // Real-time audio volume detection for remote participants
-  useEffect(() => {
-    if (participant.isSelf || !participant.stream || participant.isMuted) {
-      setIsRemoteSpeaking(false);
-      return;
-    }
-
-    let audioCtx: AudioContext | null = null;
-    let analyser: AnalyserNode | null = null;
-    let source: MediaStreamAudioSourceNode | null = null;
-    let animId: number;
-
-    try {
-      const AudioContextClass =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!AudioContextClass) return;
-
-      audioCtx = new AudioContextClass();
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 256;
-      source = audioCtx.createMediaStreamSource(participant.stream);
-      source.connect(analyser);
-
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-
-      const checkVolume = () => {
-        if (!analyser) return;
-        analyser.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < bufferLength; i++) {
-          sum += dataArray[i];
-        }
-        const avg = sum / bufferLength;
-        setIsRemoteSpeaking(avg > 18);
-        animId = requestAnimationFrame(checkVolume);
-      };
-
-      animId = requestAnimationFrame(checkVolume);
-    } catch {
-      // AudioContext error or unavailable
-    }
-
-    return () => {
-      if (animId) cancelAnimationFrame(animId);
-      if (source) source.disconnect();
-      if (audioCtx && audioCtx.state !== 'closed') {
-        audioCtx.close().catch(() => {});
-      }
-    };
-  }, [participant.stream, participant.isMuted, participant.isSelf]);
 
   // Color generator for avatar background
   const getInitials = (name: string) => {
@@ -136,7 +101,7 @@ export function VideoTile({
   ) % bgGradients.length;
   const gradient = participant.avatarColor || bgGradients[colorIndex];
 
-  const activeSpeaking = participant.isSelf ? participant.isSpeaking : (participant.isSpeaking || isRemoteSpeaking);
+  const activeSpeaking = !!participant.isSpeaking;
 
   return (
     <div

@@ -98,6 +98,19 @@ export function PreJoinLobby({ meeting, onJoin, isJoining }: PreJoinLobbyProps) 
       sessionStorage.setItem('zoom_display_name', clean);
       localStorage.setItem('zoom_user_name', clean);
     }
+    // Prime and unlock audio on this user gesture for mobile browsers (iOS & Android)
+    try {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (AudioCtx) {
+        const ctx = new AudioCtx();
+        if (ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
+        }
+      }
+    } catch {}
+
     // Clean up preview stream before joining room
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
@@ -106,7 +119,7 @@ export function PreJoinLobby({ meeting, onJoin, isJoining }: PreJoinLobbyProps) 
   };
 
   return (
-    <div className="min-h-screen bg-[#111317] text-white flex flex-col justify-between p-4 sm:p-8">
+    <div className="min-h-screen bg-[#111317] text-white flex flex-col justify-between p-3 sm:p-8">
       {/* Top bar */}
       <div className="flex items-center justify-between max-w-5xl mx-auto w-full">
         <button
@@ -119,12 +132,13 @@ export function PreJoinLobby({ meeting, onJoin, isJoining }: PreJoinLobbyProps) 
 
         <div className="flex items-center gap-2 text-xs text-slate-400 bg-white/5 px-3 py-1.5 rounded-full border border-white/10">
           <Shield className="w-3.5 h-3.5 text-emerald-400" />
-          <span>End-to-End Encrypted Meeting</span>
+          <span className="hidden xs:inline">End-to-End Encrypted</span>
+          <span className="xs:hidden">Encrypted</span>
         </div>
       </div>
 
       {/* Main Center Area */}
-      <div className="max-w-4xl mx-auto w-full my-auto py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+      <div className="max-w-4xl mx-auto w-full my-auto py-4 sm:py-8 grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-8 items-center">
         {/* Left: Video Preview Window */}
         <div className="lg:col-span-7 flex flex-col items-center">
           <div className="relative w-full aspect-video bg-[#1C1F26] rounded-2xl overflow-hidden border border-white/10 shadow-2xl flex items-center justify-center">

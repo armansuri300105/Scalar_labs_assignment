@@ -321,16 +321,11 @@ export default function MeetingRoomPage() {
       setIsMuted(initialMuted);
       setIsVideoOff(initialVideoOff);
 
-      // Determine role: host if this browser session created this meeting OR name matches meeting.host_name
-      const isCreatorHost =
-        typeof window !== 'undefined' &&
-        (sessionStorage.getItem(`zoom_is_host_${meeting.id}`) === 'true' ||
-          localStorage.getItem(`zoom_is_host_${meeting.id}`) === 'true' ||
-          (sessionStorage.getItem('zoom_is_host') === 'true' &&
-            displayName.trim().toLowerCase() === meeting.host_name.trim().toLowerCase()) ||
-          displayName.trim().toLowerCase() === meeting.host_name.trim().toLowerCase());
-      const role = isCreatorHost ? 'host' : 'participant';
-      setIsHost(role === 'host');
+      // Determine requested role: Only legitimate meeting owners can request 'host'
+      const isOwner = Boolean(
+        user && meeting.owner_id && user.id === meeting.owner_id
+      );
+      const requestedRole = isOwner ? 'host' : 'participant';
 
       // Call API to join (with passcode verification and cached participant_id to avoid duplication on refresh)
       const pass =
@@ -346,14 +341,21 @@ export default function MeetingRoomPage() {
 
       const participant = await api.joinMeeting(meeting.id, {
         display_name: displayName,
-        role,
+        role: requestedRole,
         passcode: pass,
         participant_id: cachedParticipantId
       });
       setSelfParticipant(participant);
 
+      // The verified participant.role returned by the backend is the SOLE AUTHORITATIVE SOURCE OF TRUTH
+      const isVerifiedHost = participant.role === 'host';
+      setIsHost(isVerifiedHost);
+      const role = participant.role;
+      setCurrentDisplayName(participant.display_name);
+
       if (typeof window !== 'undefined') {
         sessionStorage.setItem(`zoom_participant_id_${meeting.id}`, participant.id);
+        sessionStorage.setItem(`zoom_is_host_${meeting.id}`, String(isVerifiedHost));
         sessionStorage.setItem(`zoom_has_joined_${meeting.id}`, 'true');
         sessionStorage.setItem(`zoom_initial_no_audio_${meeting.id}`, String(initialMuted));
         sessionStorage.setItem(`zoom_initial_no_video_${meeting.id}`, String(initialVideoOff));
@@ -414,13 +416,13 @@ export default function MeetingRoomPage() {
       connectWebSocket(
         meeting.id,
         participant.id,
-        displayName,
-        role,
+        participant.display_name,
+        participant.role,
         existingPeers.map((p) => p.id)
       );
 
       setHasJoined(true);
-      success(`Joined meeting as ${displayName}`);
+      success(`Joined meeting as ${participant.display_name}`);
     } catch (err: unknown) {
       error((err as Error).message || 'Failed to join meeting.');
     } finally {

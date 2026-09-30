@@ -30,11 +30,7 @@ export function PreJoinLobby({ meeting, onJoin, isJoining }: PreJoinLobbyProps) 
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
 
-  const isHostUser =
-    (user && meeting.owner_id && user.id === meeting.owner_id) ||
-    (typeof window !== 'undefined' &&
-      (sessionStorage.getItem(`zoom_is_host_${meeting.id}`) === 'true' ||
-        localStorage.getItem(`zoom_is_host_${meeting.id}`) === 'true'));
+  const isHostUser = Boolean(user && meeting.owner_id && user.id === meeting.owner_id);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);

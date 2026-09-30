@@ -473,6 +473,86 @@ def test_refresh_rejoin_deduplication():
     assert len(parts_3) == 1, f"Expected 1 participant after rejoining by name, got {len(parts_3)}"
     print("✓ Rejoining by display_name reuses existing record and prevents duplicates")
 
+def test_host_impersonation_protection():
+    # 1. Register authentic host
+    suffix = uuid.uuid4().hex[:6]
+    host_full_name = f"Alice Host {suffix}"
+    reg_host = client.post("/api/auth/register", json={
+        "email": f"host_impersonate_{suffix}@scalar.com",
+        "password": "Password123!",
+        "full_name": host_full_name
+    })
+    host_token = reg_host.json()["token"]
+    host_headers = {"Authorization": f"Bearer {host_token}"}
+    host_id = reg_host.json()["user"]["id"]
+
+    # 2. Host creates an instant meeting
+    res_m = client.post("/api/meetings/instant", headers=host_headers, json={"title": "Host Security Standup"})
+    assert res_m.status_code == 201
+    meeting_id = res_m.json()["id"]
+
+    # 3. Authentic host joins
+    res_host_join = client.post(f"/api/meetings/{meeting_id}/join", headers=host_headers, json={
+        "display_name": host_full_name
+    })
+    assert res_host_join.status_code == 200
+    host_participant = res_host_join.json()
+    assert host_participant["role"] == "host"
+    assert host_participant["display_name"] == host_full_name
+
+    # 4. Imposter (unauthenticated guest) tries to join with host's exact name and requested role "host"
+    res_imposter = client.post(f"/api/meetings/{meeting_id}/join", json={
+        "display_name": host_full_name,
+        "role": "host"
+    })
+    assert res_imposter.status_code == 200
+    imposter = res_imposter.json()
+    
+    # Verify imposter is NOT host
+    assert imposter["role"] == "participant", "Imposter must never be assigned host role"
+    # Verify imposter display name is sanitized
+    assert imposter["display_name"] == f"{host_full_name} (Guest)", "Imposter display name must have (Guest) appended"
+    # Verify imposter participant ID is distinct from host
+    assert imposter["id"] != host_participant["id"], "Imposter must not hijack host participant record"
+
+    # 5. Verify room has 2 distinct participants
+    parts = client.get(f"/api/meetings/{meeting_id}/participants").json()
+    assert len(parts) == 2
+    part_roles = {p["id"]: p["role"] for p in parts}
+    assert part_roles[host_participant["id"]] == "host"
+    assert part_roles[imposter["id"]] == "participant"
+
+    # 6. Imposter tries to perform host actions -> 403 Forbidden
+    unauth_sec = client.post(f"/api/meetings/{meeting_id}/security", json={"is_locked": True})
+    assert unauth_sec.status_code == 403
+    unauth_mute = client.post(f"/api/meetings/{meeting_id}/mute-all")
+    assert unauth_mute.status_code == 403
+    unauth_delete = client.delete(f"/api/meetings/{meeting_id}")
+    assert unauth_delete.status_code == 403
+
+    # 7. Another authenticated user with different account tries to impersonate host
+    reg_other = client.post("/api/auth/register", json={
+        "email": f"other_user_{suffix}@scalar.com",
+        "password": "Password123!",
+        "full_name": "Bob Imposter"
+    })
+    other_token = reg_other.json()["token"]
+    other_headers = {"Authorization": f"Bearer {other_token}"}
+
+    res_other_join = client.post(f"/api/meetings/{meeting_id}/join", headers=other_headers, json={
+        "display_name": host_full_name,
+        "role": "host"
+    })
+    assert res_other_join.status_code == 200
+    other_p = res_other_join.json()
+    assert other_p["role"] == "participant"
+    assert other_p["display_name"] == f"{host_full_name} (Guest)"
+
+    other_sec = client.post(f"/api/meetings/{meeting_id}/security", headers=other_headers, json={"is_locked": True})
+    assert other_sec.status_code == 403
+
+    print("✓ Host impersonation protection verified: Imposters forced to participant role, disambiguated name, and 403 on host actions")
+
 if __name__ == "__main__":
     print("\n==========================================")
     print("RUNNING COMPREHENSIVE SECURITY & CHAT TESTS")
@@ -486,6 +566,8 @@ if __name__ == "__main__":
     test_reschedule_and_delete_meeting(mid, token)
     test_passcode_and_timezone_enforcement()
     test_refresh_rejoin_deduplication()
+    test_host_impersonation_protection()
     print("\n==========================================")
     print("ALL TESTS PASSED WITH 100% SUCCESS! 🎉")
     print("==========================================\n")
+

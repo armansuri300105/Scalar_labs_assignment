@@ -279,13 +279,24 @@ def join_meeting(
             return existing
 
     # 2. Check if an active participant with the same display_name already exists in this meeting
-    # (e.g. user refreshed the page or reconnected)
-    existing_by_name = db.query(models.Participant).filter(
-        models.Participant.meeting_id == clean_id,
-        models.Participant.display_name == clean_name,
-        models.Participant.left_at.is_(None)
-    ).first()
-    if existing_by_name:
+    # (e.g. user refreshed the page or reconnected without cached participant_id)
+    # CRITICAL SECURITY RULE: Never allow a participant to hijack an existing host's record!
+    if role == "host":
+        existing_by_name = db.query(models.Participant).filter(
+            models.Participant.meeting_id == clean_id,
+            models.Participant.display_name == clean_name,
+            models.Participant.role == "host",
+            models.Participant.left_at.is_(None)
+        ).first()
+    else:
+        existing_by_name = db.query(models.Participant).filter(
+            models.Participant.meeting_id == clean_id,
+            models.Participant.display_name == clean_name,
+            models.Participant.role == "participant",
+            models.Participant.left_at.is_(None)
+        ).first()
+
+    if existing_by_name and not participant_id:
         existing_by_name.role = role
         existing_by_name.left_at = None
         db.commit()

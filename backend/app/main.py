@@ -279,21 +279,31 @@ async def join_meeting_endpoint(
                 detail="This meeting has been locked by the host. New participants cannot join."
             )
 
-    # Assign role: If meeting has an owner_id, only the authenticated owner can be host
+    # Assign role: ONLY the authenticated meeting owner is granted the "host" role!
+    # Under NO circumstances does entering the host's display name grant host privileges.
     if meeting.owner_id:
         if current_user and current_user.id == meeting.owner_id:
             role = "host"
         else:
             role = "participant"
     else:
-        # Fallback for meetings created without owner_id
-        is_host = (payload.role == "host" or payload.display_name.strip().lower() == meeting.host_name.strip().lower())
-        role = "host" if is_host else "participant"
+        # Fallback for meetings created without owner_id:
+        # Only an authenticated user whose full_name matches host_name can be host.
+        if current_user and current_user.full_name.strip().lower() == meeting.host_name.strip().lower():
+            role = "host"
+        else:
+            role = "participant"
+
+    clean_name = payload.display_name.strip()
+    # Anti-impersonation: If a participant joins with the exact host name but is not the host,
+    # append "(Guest)" to prevent misleading other participants.
+    if role != "host" and meeting.host_name and clean_name.lower() == meeting.host_name.strip().lower():
+        clean_name = f"{clean_name} (Guest)"
 
     participant = crud.join_meeting(
         db,
         meeting_id=meeting.id,
-        display_name=payload.display_name.strip(),
+        display_name=clean_name,
         role=role,
         participant_id=payload.participant_id
     )
@@ -398,13 +408,18 @@ async def update_participant_state(
     return participant
 
 def check_host_authorization(meeting: models.Meeting, user: Optional[models.User]):
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Authentication required. Only the meeting host/owner is authorized to perform this host action."
+        )
     if meeting.owner_id:
-        if not user or user.id != meeting.owner_id:
+        if user.id != meeting.owner_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only the meeting host/owner is authorized to perform this host action."
             )
-    elif user and user.full_name.strip().lower() != meeting.host_name.strip().lower():
+    elif user.full_name.strip().lower() != meeting.host_name.strip().lower():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the meeting host is authorized to perform this host action."
@@ -635,10 +650,21 @@ async def meeting_websocket(
     db: Session = Depends(get_db)
 ):
     clean_id = crud.clean_meeting_id(meeting_id)
+
+    # CRITICAL SECURITY: Verify role and display name from the database participant record!
+    # The client cannot dictate its own role or spoof identities via query params.
+    verified_role = "participant"
+    verified_name = display_name
+    if participant_id:
+        p = crud.get_participant_by_id(db, clean_id, participant_id)
+        if p:
+            verified_role = p.role
+            verified_name = p.display_name
+
     p_info = {
         "id": participant_id,
-        "display_name": display_name,
-        "role": role,
+        "display_name": verified_name,
+        "role": verified_role,
         "is_muted": False,
         "is_video_off": False
     }
@@ -653,7 +679,7 @@ async def meeting_websocket(
                 # emoji reactions (e.g. clap, thumbs up, heart, joy, surprised, tada)
                 await manager.broadcast(clean_id, {
                     "type": "REACTION",
-                    "sender_name": data.get("sender_name") or display_name,
+                    "sender_name": data.get("sender_name") or verified_name,
                     "sender_id": participant_id,
                     "emoji": data.get("emoji", "👍")
                 })
@@ -671,8 +697,8 @@ async def meeting_websocket(
                         "type": "PARTICIPANT_UPDATED",
                         "participant": {
                             "id": target_p_id,
-                            "display_name": display_name,
-                            "role": role,
+                            "display_name": verified_name,
+                            "role": verified_role,
                             "is_muted": is_muted,
                             "is_video_off": is_video_off,
                             "is_hand_raised": is_hand_raised
@@ -682,13 +708,13 @@ async def meeting_websocket(
                 await manager.broadcast(clean_id, {
                     "type": "SCREEN_SHARE_STARTED",
                     "participant_id": participant_id,
-                    "display_name": display_name
+                    "display_name": verified_name
                 })
             elif event_type == "SCREEN_SHARE_STOPPED":
                 await manager.broadcast(clean_id, {
                     "type": "SCREEN_SHARE_STOPPED",
                     "participant_id": participant_id,
-                    "display_name": display_name
+                    "display_name": verified_name
                 })
             elif event_type == "SIGNAL":
                 # WebRTC peer signaling (offer/answer/ice-candidate)
@@ -701,18 +727,18 @@ async def meeting_websocket(
                     })
             elif event_type == "ASK_UNMUTE":
                 target_id = data.get("target")
-                if target_id:
+                if target_id and verified_role == "host":
                     await manager.send_to_user(clean_id, target_id, {
                         "type": "ASK_UNMUTE",
-                        "host_name": display_name
+                        "host_name": verified_name
                     })
             elif event_type == "MUTE_PARTICIPANT":
                 target_id = data.get("target")
-                if target_id:
+                if target_id and verified_role == "host":
                     crud.update_participant_status(db, clean_id, target_id, is_muted=True)
                     await manager.send_to_user(clean_id, target_id, {
                         "type": "HOST_MUTED_YOU",
-                        "host_name": display_name
+                        "host_name": verified_name
                     })
                     await manager.broadcast(clean_id, {
                         "type": "PARTICIPANT_UPDATED",
@@ -728,8 +754,8 @@ async def meeting_websocket(
                     chat = crud.add_chat_message(
                         db,
                         meeting_id=clean_id,
-                        sender_name=display_name,
-                        sender_role=role,
+                        sender_name=verified_name,
+                        sender_role=verified_role,
                         message=content
                     )
                     await manager.broadcast(clean_id, {

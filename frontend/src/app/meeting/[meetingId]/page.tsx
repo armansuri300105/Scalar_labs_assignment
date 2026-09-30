@@ -93,8 +93,14 @@ export default function MeetingRoomPage() {
       setIsMuted(initialMuted);
       setIsVideoOff(initialVideoOff);
 
-      // Determine role: host if this browser session initiated the meeting
-      const isCreatorHost = typeof window !== 'undefined' && sessionStorage.getItem('zoom_is_host') === 'true';
+      // Determine role: host if this browser session created this meeting OR name matches meeting.host_name
+      const isCreatorHost =
+        typeof window !== 'undefined' &&
+        (sessionStorage.getItem(`zoom_is_host_${meeting.id}`) === 'true' ||
+         localStorage.getItem(`zoom_is_host_${meeting.id}`) === 'true' ||
+         (sessionStorage.getItem('zoom_is_host') === 'true' &&
+          displayName.trim().toLowerCase() === meeting.host_name.trim().toLowerCase()) ||
+         displayName.trim().toLowerCase() === meeting.host_name.trim().toLowerCase());
       const role = isCreatorHost ? 'host' : 'participant';
       setIsHost(role === 'host');
 
@@ -521,7 +527,11 @@ export default function MeetingRoomPage() {
   // Leave Meeting
   const handleLeaveMeeting = async () => {
     if (meeting && selfParticipant) {
-      api.leaveMeeting(meeting.id, selfParticipant.id).catch(() => {});
+      if (isHost && roomParticipants.length <= 1) {
+        await api.endMeeting(meeting.id).catch(() => {});
+      } else {
+        await api.leaveMeeting(meeting.id, selfParticipant.id).catch(() => {});
+      }
     }
     success('You left the meeting.');
     cleanupAndLeave();

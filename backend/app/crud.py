@@ -86,16 +86,6 @@ def create_instant_meeting(
     )
     db.add(meeting)
     
-    # Auto-add host as first participant
-    host_participant = models.Participant(
-        meeting_id=mid,
-        display_name=host_name,
-        role="host",
-        is_muted=False,
-        is_video_off=False
-    )
-    db.add(host_participant)
-
     activity = models.MeetingActivity(
         meeting_id=mid,
         activity_type="created",

@@ -68,6 +68,8 @@ export default function DashboardPage() {
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('zoom_display_name', hostName);
         sessionStorage.setItem('zoom_is_host', 'true');
+        sessionStorage.setItem(`zoom_is_host_${meeting.id}`, 'true');
+        localStorage.setItem(`zoom_is_host_${meeting.id}`, 'true');
         sessionStorage.setItem('zoom_initial_no_audio', 'false');
         sessionStorage.setItem('zoom_initial_no_video', 'false');
       }
@@ -82,9 +84,6 @@ export default function DashboardPage() {
 
   // Handler: Join meeting from card or modal
   const handleJoinMeeting = (meetingId: string) => {
-    if (typeof window !== 'undefined') {
-      sessionStorage.removeItem('zoom_is_host');
-    }
     router.push(`/meeting/${meetingId}`);
   };
 

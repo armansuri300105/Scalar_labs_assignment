@@ -172,8 +172,9 @@ async def join_meeting_endpoint(
                 detail="Incorrect meeting passcode."
             )
 
-    # Assign role: host if specified by the creator, otherwise participant
-    role = "host" if payload.role == "host" else "participant"
+    # Assign role: host if explicitly requested OR if display_name matches meeting host_name
+    is_host = (payload.role == "host" or payload.display_name.strip().lower() == meeting.host_name.strip().lower())
+    role = "host" if is_host else "participant"
 
     participant = crud.join_meeting(
         db,
@@ -202,6 +203,15 @@ async def leave_meeting_endpoint(
             "participant_id": participant_id,
             "display_name": participant.display_name
         })
+
+        # If room is now empty, automatically end the meeting
+        remaining = crud.get_participants(db, meeting_id, active_only=True)
+        if len(remaining) == 0:
+            crud.end_meeting(db, meeting_id)
+            await manager.broadcast(meeting_id, {
+                "type": "MEETING_ENDED"
+            })
+
     return {"message": "Left meeting successfully"}
 
 @app.get("/api/meetings/{meeting_id}/participants", response_model=List[schemas.ParticipantResponse], tags=["Participants"])

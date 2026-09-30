@@ -182,10 +182,14 @@ export default function MeetingRoomPage() {
   // 3. WebSocket Connection
   const connectWebSocket = useCallback((mId: string, pId: string, name: string, role: string) => {
     try {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = process.env.NEXT_PUBLIC_API_URL
-        ? process.env.NEXT_PUBLIC_API_URL.replace(/^http(s)?:\/\//, '')
-        : (typeof window !== 'undefined' ? window.location.host : 'localhost:8000');
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://scalar-labs-assignment.onrender.com';
+      const cleanUrl = apiUrl.replace(/\/+$/, '');
+      const protocol = cleanUrl.startsWith('https://')
+        ? 'wss:'
+        : cleanUrl.startsWith('http://')
+        ? 'ws:'
+        : (typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss:' : 'ws:');
+      const host = cleanUrl.replace(/^https?:\/\//, '');
       const wsUrl = `${protocol}//${host}/ws/meeting/${mId}?display_name=${encodeURIComponent(name)}&participant_id=${encodeURIComponent(pId)}&role=${role}`;
 
       const ws = new WebSocket(wsUrl);

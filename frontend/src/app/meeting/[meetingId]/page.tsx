@@ -1126,9 +1126,17 @@ export default function MeetingRoomPage() {
       // Revert peer connections back to camera video track
       const camTrack = localStreamRef.current?.getVideoTracks()[0] || null;
       peerConnectionsRef.current.forEach((pc) => {
-        const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
-        if (sender && camTrack) {
-          sender.replaceTrack(camTrack);
+        const transceivers = pc.getTransceivers();
+        const videoTransceiver = transceivers.find(
+          (t) => t.receiver.track.kind === 'video' || t.sender.track?.kind === 'video'
+        );
+        if (videoTransceiver && videoTransceiver.sender && camTrack) {
+          videoTransceiver.sender.replaceTrack(camTrack);
+        } else {
+          const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+          if (sender && camTrack) {
+            sender.replaceTrack(camTrack);
+          }
         }
       });
 
@@ -1171,9 +1179,17 @@ export default function MeetingRoomPage() {
         const screenTrack = stream.getVideoTracks()[0];
         // Send screen video track to all connected peers
         peerConnectionsRef.current.forEach((pc) => {
-          const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
-          if (sender) {
-            sender.replaceTrack(screenTrack);
+          const transceivers = pc.getTransceivers();
+          const videoTransceiver = transceivers.find(
+            (t) => t.receiver.track.kind === 'video' || t.sender.track?.kind === 'video'
+          );
+          if (videoTransceiver && videoTransceiver.sender) {
+            videoTransceiver.sender.replaceTrack(screenTrack);
+          } else {
+            const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+            if (sender) {
+              sender.replaceTrack(screenTrack);
+            }
           }
         });
 
@@ -1182,9 +1198,17 @@ export default function MeetingRoomPage() {
           setScreenShareBy(null);
           const camTrack = localStreamRef.current?.getVideoTracks()[0] || null;
           peerConnectionsRef.current.forEach((pc) => {
-            const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
-            if (sender && camTrack) {
-              sender.replaceTrack(camTrack);
+            const transceivers = pc.getTransceivers();
+            const videoTransceiver = transceivers.find(
+              (t) => t.receiver.track.kind === 'video' || t.sender.track?.kind === 'video'
+            );
+            if (videoTransceiver && videoTransceiver.sender && camTrack) {
+              videoTransceiver.sender.replaceTrack(camTrack);
+            } else {
+              const sender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+              if (sender && camTrack) {
+                sender.replaceTrack(camTrack);
+              }
             }
           });
           if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {

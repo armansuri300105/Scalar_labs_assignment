@@ -13,6 +13,69 @@ interface VideoGridProps {
   onTogglePin?: (id: string) => void;
 }
 
+interface ScreenShareViewportProps {
+  stream: MediaStream;
+  sharedBy?: string | null;
+}
+
+const ScreenShareViewport = React.memo(function ScreenShareViewport({
+  stream,
+  sharedBy
+}: ScreenShareViewportProps) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl || !stream) return;
+
+    if (videoEl.srcObject !== stream) {
+      videoEl.srcObject = stream;
+    }
+    videoEl.play().catch(() => {});
+
+    const handleTrackEvent = () => {
+      if (videoEl) {
+        if (videoEl.srcObject !== stream) {
+          videoEl.srcObject = stream;
+        }
+        videoEl.play().catch(() => {});
+      }
+    };
+
+    stream.addEventListener('addtrack', handleTrackEvent);
+    stream.addEventListener('removetrack', handleTrackEvent);
+    stream.getVideoTracks().forEach((track) => {
+      track.addEventListener('unmute', handleTrackEvent);
+    });
+
+    return () => {
+      stream.removeEventListener('addtrack', handleTrackEvent);
+      stream.removeEventListener('removetrack', handleTrackEvent);
+      stream.getVideoTracks().forEach((track) => {
+        track.removeEventListener('unmute', handleTrackEvent);
+      });
+    };
+  }, [stream]);
+
+  return (
+    <div className="w-full h-full bg-black rounded-2xl overflow-hidden border border-white/10 relative flex items-center justify-center shadow-2xl">
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted={true}
+        onLoadedMetadata={(e) => e.currentTarget.play().catch(() => {})}
+        onCanPlay={(e) => e.currentTarget.play().catch(() => {})}
+        className="w-full h-full object-contain pointer-events-none"
+      />
+      <div className="absolute top-3 left-3 bg-black/75 backdrop-blur-md px-3 py-1.5 rounded-xl text-xs font-semibold text-emerald-400 flex items-center gap-2 border border-white/15 shadow-lg select-none">
+        <Monitor className="w-4 h-4 text-emerald-400" />
+        <span>{sharedBy ? `${sharedBy}'s Screen` : 'Shared Screen'}</span>
+      </div>
+    </div>
+  );
+});
+
 export function VideoGrid({
   participants,
   viewMode,
@@ -157,23 +220,11 @@ export function VideoGrid({
 
         {/* Main Large Viewport */}
         <div className="flex-1 min-h-0 w-full flex items-center justify-center relative">
-          {isScreenShareActive ? (
-            <div className="w-full h-full bg-black rounded-2xl overflow-hidden border border-white/10 relative flex items-center justify-center shadow-2xl">
-              <video
-                ref={(node) => {
-                  if (node && screenShareStream) {
-                    node.srcObject = screenShareStream;
-                  }
-                }}
-                autoPlay
-                playsInline
-                className="w-full h-full object-contain"
-              />
-              <div className="absolute top-3 left-3 bg-black/75 backdrop-blur-md px-3 py-1.5 rounded-xl text-xs font-semibold text-emerald-400 flex items-center gap-2 border border-white/15 shadow-lg">
-                <Monitor className="w-4 h-4 text-emerald-400" />
-                <span>{screenShareBy ? `${screenShareBy}'s Screen` : 'Shared Screen'}</span>
-              </div>
-            </div>
+          {isScreenShareActive && screenShareStream ? (
+            <ScreenShareViewport
+              stream={screenShareStream}
+              sharedBy={screenShareBy}
+            />
           ) : mainParticipant ? (
             <div className="w-full h-full max-w-6xl flex items-center justify-center">
               <VideoTile

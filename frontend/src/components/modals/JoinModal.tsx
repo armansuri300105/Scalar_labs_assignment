@@ -18,7 +18,12 @@ export function JoinModal({ isOpen, onClose, initialMeetingId = '' }: JoinModalP
   const { error } = useToast();
 
   const [query, setQuery] = useState(initialMeetingId);
-  const [displayName, setDisplayName] = useState('Mohammed Arshad');
+  const [displayName, setDisplayName] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('zoom_display_name') || localStorage.getItem('zoom_user_name') || '';
+    }
+    return '';
+  });
   const [passcode, setPasscode] = useState('');
   const [noAudio, setNoAudio] = useState(false);
   const [noVideo, setNoVideo] = useState(false);
@@ -50,6 +55,8 @@ export function JoinModal({ isOpen, onClose, initialMeetingId = '' }: JoinModalP
       // Save display name & audio/video initial preferences to sessionStorage
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('zoom_display_name', cleanName);
+        localStorage.setItem('zoom_user_name', cleanName);
+        sessionStorage.removeItem('zoom_is_host');
         sessionStorage.setItem('zoom_initial_no_audio', noAudio ? 'true' : 'false');
         sessionStorage.setItem('zoom_initial_no_video', noVideo ? 'true' : 'false');
         if (passcode.trim()) {

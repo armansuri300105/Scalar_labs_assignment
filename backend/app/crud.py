@@ -174,19 +174,7 @@ def join_meeting(
     display_name: str,
     role: str = "participant"
 ) -> models.Participant:
-    # Check if participant with this display_name already exists in meeting and is active
     clean_id = clean_meeting_id(meeting_id)
-    existing = (
-        db.query(models.Participant)
-        .filter(
-            models.Participant.meeting_id == clean_id,
-            models.Participant.display_name == display_name,
-            models.Participant.left_at.is_(None)
-        )
-        .first()
-    )
-    if existing:
-        return existing
 
     participant = models.Participant(
         meeting_id=clean_id,

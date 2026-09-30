@@ -167,8 +167,8 @@ async def join_meeting_endpoint(
                 detail="Incorrect meeting passcode."
             )
 
-    # Auto assign role: if meeting host matches display_name, grant host
-    role = "host" if (payload.role == "host" or payload.display_name.strip().lower() == meeting.host_name.strip().lower()) else "participant"
+    # Assign role: host if specified by the creator, otherwise participant
+    role = "host" if payload.role == "host" else "participant"
 
     participant = crud.join_meeting(
         db,

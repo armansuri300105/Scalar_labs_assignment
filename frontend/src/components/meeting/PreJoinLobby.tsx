@@ -17,7 +17,7 @@ export function PreJoinLobby({ meeting, onJoin, isJoining }: PreJoinLobbyProps) 
   const router = useRouter();
   const { error } = useToast();
 
-  const [displayName, setDisplayName] = useState('Mohammed Arshad');
+  const [displayName, setDisplayName] = useState('');
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
@@ -28,7 +28,7 @@ export function PreJoinLobby({ meeting, onJoin, isJoining }: PreJoinLobbyProps) 
   useEffect(() => {
     // Read initial preferences if stored
     if (typeof window !== 'undefined') {
-      const savedName = sessionStorage.getItem('zoom_display_name');
+      const savedName = sessionStorage.getItem('zoom_display_name') || localStorage.getItem('zoom_user_name');
       if (savedName) setDisplayName(savedName);
 
       const noAudio = sessionStorage.getItem('zoom_initial_no_audio') === 'true';
@@ -83,15 +83,20 @@ export function PreJoinLobby({ meeting, onJoin, isJoining }: PreJoinLobbyProps) 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!displayName.trim()) {
+    const clean = displayName.trim();
+    if (!clean) {
       error('Please enter a display name to join the meeting.');
       return;
+    }
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('zoom_display_name', clean);
+      localStorage.setItem('zoom_user_name', clean);
     }
     // Clean up preview stream before joining room
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
     }
-    onJoin(displayName.trim(), isMuted, isVideoOff);
+    onJoin(clean, isMuted, isVideoOff);
   };
 
   return (
@@ -201,7 +206,7 @@ export function PreJoinLobby({ meeting, onJoin, isJoining }: PreJoinLobbyProps) 
                 required
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Enter your name"
+                placeholder="Enter your name (e.g. Alex, Guest, Your Name)"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-[#111317] border border-slate-700 text-white text-sm focus:outline-none focus:border-[#0E71EB] focus:ring-1 focus:ring-[#0E71EB]"
               />
             </div>

@@ -93,8 +93,9 @@ export default function MeetingRoomPage() {
       setIsMuted(initialMuted);
       setIsVideoOff(initialVideoOff);
 
-      // Determine role: host if name matches host_name
-      const role = displayName.trim().toLowerCase() === meeting.host_name.trim().toLowerCase() ? 'host' : 'participant';
+      // Determine role: host if this browser session initiated the meeting
+      const isCreatorHost = typeof window !== 'undefined' && sessionStorage.getItem('zoom_is_host') === 'true';
+      const role = isCreatorHost ? 'host' : 'participant';
       setIsHost(role === 'host');
 
       // Call API to join

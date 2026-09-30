@@ -62,7 +62,7 @@ def resolve_meeting_query(db: Session, query_str: str) -> Optional[models.Meetin
 def create_instant_meeting(
     db: Session,
     title: Optional[str] = None,
-    host_name: str = "Default User"
+    host_name: str = "Host"
 ) -> models.Meeting:
     # Ensure unique ID
     for _ in range(10):
@@ -131,7 +131,7 @@ def create_scheduled_meeting(
         meeting_type="scheduled",
         scheduled_at=sched_time,
         duration_minutes=meeting_in.duration_minutes,
-        host_name=meeting_in.host_name or "Default User",
+        host_name=meeting_in.host_name or "Host",
         invite_token=token,
         passcode=passcode,
         status="scheduled"

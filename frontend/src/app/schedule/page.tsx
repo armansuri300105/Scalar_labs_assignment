@@ -16,7 +16,13 @@ export default function SchedulePage() {
   const nextHour = new Date(now.getTime() + 60 * 60 * 1000);
   const defaultTime = `${String(nextHour.getHours()).padStart(2, '0')}:00`;
 
-  const [title, setTitle] = useState("Mohammed Arshad's Scheduled Zoom Meeting");
+  const [title, setTitle] = useState('');
+  const [hostName, setHostName] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('zoom_user_name') || sessionStorage.getItem('zoom_display_name') || 'Host User';
+    }
+    return 'Host User';
+  });
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(defaultDate);
   const [time, setTime] = useState(defaultTime);
@@ -40,7 +46,7 @@ export default function SchedulePage() {
         description: description.trim() || undefined,
         scheduled_at: scheduledDateTime.toISOString(),
         duration_minutes: Number(duration),
-        host_name: 'Mohammed Arshad',
+        host_name: hostName.trim() || 'Host User',
         passcode: passcode.trim() || undefined
       });
 
@@ -87,6 +93,7 @@ export default function SchedulePage() {
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              placeholder="Enter meeting topic (e.g. Weekly Team Sync, Architecture Review)"
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white text-sm focus:outline-none focus:border-[#0E71EB]"
             />
           </div>

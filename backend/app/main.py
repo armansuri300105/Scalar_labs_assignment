@@ -11,12 +11,8 @@ from .config import CORS_ORIGINS
 from .seed import seed_database
 from .websocket_manager import manager
 
-# Initialize SQLite tables and seed data
+# Initialize SQLite tables
 Base.metadata.create_all(bind=engine)
-try:
-    seed_database()
-except Exception as e:
-    print(f"Seed note: {e}")
 
 app = FastAPI(
     title="Zoom Clone REST API",
@@ -62,6 +58,15 @@ def health_check():
         "version": "1.0.0"
     }
 
+@app.post("/api/database/reset", tags=["System"])
+def reset_database(db: Session = Depends(get_db)):
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    return {
+        "status": "success",
+        "message": "All database records have been deleted. Database is completely fresh."
+    }
+
 # --- Meetings Management ---
 @app.get("/api/meetings", response_model=List[schemas.MeetingResponse], tags=["Meetings"])
 def list_meetings(
@@ -82,7 +87,7 @@ def create_instant_meeting(
     payload: schemas.MeetingCreateInstant = schemas.MeetingCreateInstant(),
     db: Session = Depends(get_db)
 ):
-    host_name = payload.host_name.strip() if payload.host_name and payload.host_name.strip() else "Default User"
+    host_name = payload.host_name.strip() if payload.host_name and payload.host_name.strip() else "Host"
     meeting = crud.create_instant_meeting(db, title=payload.title, host_name=host_name)
     return enrich_meeting(meeting)
 

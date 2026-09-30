@@ -19,7 +19,7 @@ class Meeting(Base):
     meeting_type = Column(String(50), nullable=False, default="instant") # "instant" or "scheduled"
     scheduled_at = Column(DateTime, nullable=True)
     duration_minutes = Column(Integer, nullable=False, default=45)
-    host_name = Column(String(100), nullable=False, default="Default User")
+    host_name = Column(String(100), nullable=False, default="Host")
     invite_token = Column(String(64), unique=True, index=True, nullable=False)
     passcode = Column(String(32), nullable=True)
     status = Column(String(50), nullable=False, default="scheduled") # "scheduled", "active", "ended"

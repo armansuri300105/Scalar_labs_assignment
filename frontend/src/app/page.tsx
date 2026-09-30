@@ -55,13 +55,18 @@ export default function DashboardPage() {
   const handleStartInstantMeeting = async () => {
     try {
       setIsStartingInstant(true);
+      const hostName =
+        (typeof window !== 'undefined' &&
+          (localStorage.getItem('zoom_user_name') || sessionStorage.getItem('zoom_display_name'))) ||
+        'Host User';
+
       const meeting = await api.createInstantMeeting({
-        title: "Mohammed Arshad's Instant Meeting",
-        host_name: 'Mohammed Arshad'
+        title: `${hostName}'s Instant Meeting`,
+        host_name: hostName
       });
 
       if (typeof window !== 'undefined') {
-        sessionStorage.setItem('zoom_display_name', 'Mohammed Arshad');
+        sessionStorage.setItem('zoom_display_name', hostName);
         sessionStorage.setItem('zoom_is_host', 'true');
         sessionStorage.setItem('zoom_initial_no_audio', 'false');
         sessionStorage.setItem('zoom_initial_no_video', 'false');

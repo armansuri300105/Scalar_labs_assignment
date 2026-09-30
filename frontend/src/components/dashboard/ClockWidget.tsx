@@ -62,7 +62,7 @@ export function ClockWidget() {
             <span>{dateStr || 'Loading date...'}</span>
           </div>
           <div className="text-xs text-blue-200 font-medium hidden sm:block">
-            {greeting}, Mohammed!
+            {greeting}!
           </div>
         </div>
       </div>

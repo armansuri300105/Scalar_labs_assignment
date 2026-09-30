@@ -47,14 +47,14 @@ class ChatMessageResponse(BaseModel):
 # --- Meeting Schemas ---
 class MeetingCreateInstant(BaseModel):
     title: Optional[str] = "Instant Meeting"
-    host_name: Optional[str] = "Default User"
+    host_name: Optional[str] = "Host"
 
 class MeetingCreateScheduled(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
     scheduled_at: datetime
     duration_minutes: int = Field(default=30, gt=0, le=1440)
-    host_name: Optional[str] = "Default User"
+    host_name: Optional[str] = "Host"
     passcode: Optional[str] = None
 
     @field_validator("title")

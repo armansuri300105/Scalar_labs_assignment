@@ -21,7 +21,13 @@ export function ScheduleModal({ isOpen, onClose, onMeetingScheduled }: ScheduleM
   const nextHour = new Date(now.getTime() + 60 * 60 * 1000);
   const defaultTime = `${String(nextHour.getHours()).padStart(2, '0')}:00`;
 
-  const [title, setTitle] = useState('Mohammed Arshad\'s Scheduled Zoom Meeting');
+  const [title, setTitle] = useState('');
+  const [hostName, setHostName] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('zoom_user_name') || sessionStorage.getItem('zoom_display_name') || 'Host User';
+    }
+    return 'Host User';
+  });
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(defaultDate);
   const [time, setTime] = useState(defaultTime);
@@ -49,7 +55,7 @@ export function ScheduleModal({ isOpen, onClose, onMeetingScheduled }: ScheduleM
         description: description.trim() || undefined,
         scheduled_at: scheduledDateTime.toISOString(),
         duration_minutes: Number(duration),
-        host_name: 'Mohammed Arshad',
+        host_name: hostName.trim() || 'Host User',
         passcode: passcode.trim() || undefined
       });
 

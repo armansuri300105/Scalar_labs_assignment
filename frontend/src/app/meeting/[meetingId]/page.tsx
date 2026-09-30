@@ -33,7 +33,7 @@ export default function MeetingRoomPage() {
 
   // Self Participant Info
   const [selfParticipant, setSelfParticipant] = useState<Participant | null>(null);
-  const [currentDisplayName, setCurrentDisplayName] = useState('Mohammed Arshad');
+  const [currentDisplayName, setCurrentDisplayName] = useState('');
   const [isHost, setIsHost] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);

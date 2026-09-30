@@ -8,7 +8,8 @@ import {
   User,
   AuthResponse,
   UserRegisterInput,
-  UserLoginInput
+  UserLoginInput,
+  SecuritySettings
 } from '../types';
 
 const RAW_API_URL =
@@ -122,7 +123,7 @@ export const api = {
   updateParticipantState: (
     meetingId: string,
     participantId: string,
-    updates: { is_muted?: boolean; is_video_off?: boolean; is_hand_raised?: boolean }
+    updates: { display_name?: string; is_muted?: boolean; is_video_off?: boolean; is_hand_raised?: boolean }
   ) =>
     request<Participant>(`/api/meetings/${encodeURIComponent(meetingId)}/participants/${encodeURIComponent(participantId)}/status`, {
       method: 'POST',
@@ -130,6 +131,15 @@ export const api = {
     }),
 
   // Host Controls
+  updateMeetingSecurity: (
+    meetingId: string,
+    settings: Partial<SecuritySettings>
+  ) =>
+    request<SecuritySettings>(`/api/meetings/${encodeURIComponent(meetingId)}/security`, {
+      method: 'POST',
+      body: JSON.stringify(settings)
+    }),
+
   muteAll: (meetingId: string) =>
     request<{ message: string }>(`/api/meetings/${encodeURIComponent(meetingId)}/mute-all`, {
       method: 'POST'

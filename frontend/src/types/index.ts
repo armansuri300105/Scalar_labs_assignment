@@ -1,3 +1,11 @@
+export interface SecuritySettings {
+  is_locked: boolean;
+  allow_share_screen: boolean;
+  allow_chat: boolean;
+  allow_rename: boolean;
+  allow_unmute: boolean;
+}
+
 export interface Meeting {
   id: string;
   title: string;
@@ -10,6 +18,11 @@ export interface Meeting {
   passcode?: string | null;
   status: 'scheduled' | 'active' | 'ended';
   owner_id?: string | null;
+  is_locked?: boolean;
+  allow_share_screen?: boolean;
+  allow_chat?: boolean;
+  allow_rename?: boolean;
+  allow_unmute?: boolean;
   created_at: string;
   updated_at: string;
   participant_count?: number;

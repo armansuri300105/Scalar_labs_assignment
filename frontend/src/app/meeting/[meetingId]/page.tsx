@@ -12,7 +12,7 @@ import { ChatPanel } from '../../../components/meeting/ChatPanel';
 import { SecurityModal } from '../../../components/meeting/SecurityModal';
 import { ReactionsOverlay, FloatingReaction } from '../../../components/meeting/ReactionsOverlay';
 import { InviteModal } from '../../../components/modals/InviteModal';
-import { Meeting, Participant, ChatMessage } from '../../../types';
+import { Meeting, Participant, ChatMessage, SecuritySettings } from '../../../types';
 import { api } from '../../../lib/api';
 import { useToast } from '../../../context/ToastContext';
 
@@ -49,7 +49,14 @@ export default function MeetingRoomPage() {
   const [isParticipantsOpen, setIsParticipantsOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isSecurityOpen, setIsSecurityOpen] = useState(false);
-  const [isLocked, setIsLocked] = useState(false);
+  const [securitySettings, setSecuritySettings] = useState<SecuritySettings>({
+    is_locked: false,
+    allow_share_screen: true,
+    allow_chat: true,
+    allow_rename: true,
+    allow_unmute: true
+  });
+  const [updatingSecurityKey, setUpdatingSecurityKey] = useState<string | null>(null);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
 
@@ -241,6 +248,15 @@ export default function MeetingRoomPage() {
         setIsLoadingMeeting(true);
         const data = await api.getMeetingDetails(meetingId);
         setMeeting(data);
+        if (data) {
+          setSecuritySettings({
+            is_locked: !!data.is_locked,
+            allow_share_screen: data.allow_share_screen ?? true,
+            allow_chat: data.allow_chat ?? true,
+            allow_rename: data.allow_rename ?? true,
+            allow_unmute: data.allow_unmute ?? true
+          });
+        }
         if (data.chat_messages && Array.isArray(data.chat_messages)) {
           const rawMsgs = data.chat_messages;
           setChatMessages((prev) => {
@@ -431,6 +447,31 @@ export default function MeetingRoomPage() {
                 prev.map((p) => (p.isSelf ? { ...p, isMuted: true } : p))
               );
               info('The host muted all participants.');
+            } else if (data.type === 'SECURITY_SETTINGS_UPDATED') {
+              const newSettings: SecuritySettings = data.settings;
+              setSecuritySettings((prev) => {
+                if (newSettings.is_locked !== prev.is_locked) {
+                  info(newSettings.is_locked ? 'The host locked the meeting.' : 'The host unlocked the meeting.');
+                }
+                if (newSettings.allow_share_screen !== prev.allow_share_screen) {
+                  info(newSettings.allow_share_screen ? 'Screen sharing enabled for participants.' : 'Screen sharing disabled for participants.');
+                  if (!isHost && !newSettings.allow_share_screen && screenShareStream) {
+                    screenShareStream.getTracks().forEach((t) => t.stop());
+                    setScreenShareStream(null);
+                    setScreenShareBy(null);
+                  }
+                }
+                if (newSettings.allow_chat !== prev.allow_chat) {
+                  info(newSettings.allow_chat ? 'In-meeting chat enabled by the host.' : 'In-meeting chat disabled by the host.');
+                }
+                if (newSettings.allow_unmute !== prev.allow_unmute) {
+                  info(newSettings.allow_unmute ? 'Participants can now unmute themselves.' : 'The host disabled participant unmuting.');
+                }
+                if (newSettings.allow_rename !== prev.allow_rename) {
+                  info(newSettings.allow_rename ? 'Participant renaming enabled by the host.' : 'Participant renaming disabled by the host.');
+                }
+                return newSettings;
+              });
             } else if (data.type === 'PARTICIPANT_REMOVED') {
               if (data.participant_id === pId) {
                 error('You were removed from the meeting by the host.');
@@ -692,6 +733,10 @@ export default function MeetingRoomPage() {
 
   // Toggle Mute
   const handleToggleMute = () => {
+    if (isMuted && !isHost && !securitySettings.allow_unmute) {
+      error('The host has not allowed participants to unmute themselves.');
+      return;
+    }
     const newMuted = !isMuted;
     setIsMuted(newMuted);
     if (localStreamRef.current) {
@@ -703,7 +748,20 @@ export default function MeetingRoomPage() {
       prev.map((p) => (p.isSelf ? { ...p, isMuted: newMuted } : p))
     );
     if (selfParticipant && meeting) {
-      api.updateParticipantState(meeting.id, selfParticipant.id, { is_muted: newMuted }).catch(() => {});
+      api.updateParticipantState(meeting.id, selfParticipant.id, { is_muted: newMuted }).catch((err) => {
+        if (!newMuted) {
+          setIsMuted(true);
+          if (localStreamRef.current) {
+            localStreamRef.current.getAudioTracks().forEach((track) => {
+              track.enabled = false;
+            });
+          }
+          setRoomParticipants((prev) =>
+            prev.map((p) => (p.isSelf ? { ...p, isMuted: true } : p))
+          );
+        }
+        error((err as Error).message || 'Failed to update mute state.');
+      });
     }
   };
 
@@ -795,6 +853,11 @@ export default function MeetingRoomPage() {
       return;
     }
 
+    if (!isHost && !securitySettings.allow_share_screen) {
+      error('Screen sharing has been disabled by the meeting host.');
+      return;
+    }
+
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
@@ -842,6 +905,10 @@ export default function MeetingRoomPage() {
   // Send In-Meeting Chat Message
   const handleSendMessage = async (text: string) => {
     if (!meeting) return;
+    if (!isHost && !securitySettings.allow_chat) {
+      error('Chat has been disabled by the meeting host.');
+      return;
+    }
     try {
       const newMsg = await api.sendChatMessage(meeting.id, {
         sender_name: currentDisplayName,
@@ -853,7 +920,58 @@ export default function MeetingRoomPage() {
         return [...prev, newMsg];
       });
     } catch (err: unknown) {
-      error('Failed to send message.');
+      error((err as Error).message || 'Failed to send message.');
+    }
+  };
+
+  // Participant rename self
+  const handleRenameSelf = async (newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === currentDisplayName) return;
+    if (!isHost && !securitySettings.allow_rename) {
+      error('The host has not allowed participants to rename themselves.');
+      return;
+    }
+    if (!meeting || !selfParticipant) return;
+
+    try {
+      await api.updateParticipantState(meeting.id, selfParticipant.id, { display_name: trimmed });
+      setCurrentDisplayName(trimmed);
+      setRoomParticipants((prev) =>
+        prev.map((p) => (p.isSelf ? { ...p, displayName: trimmed } : p))
+      );
+      success(`Display name updated to ${trimmed}`);
+    } catch (err: unknown) {
+      error((err as Error).message || 'Failed to rename.');
+    }
+  };
+
+  // Host toggle security setting
+  const handleToggleSecuritySetting = async (key: keyof SecuritySettings) => {
+    if (!isHost || !meeting) return;
+    const previous = { ...securitySettings };
+    const updatedValue = !previous[key];
+    const newSettings = { ...previous, [key]: updatedValue };
+
+    setUpdatingSecurityKey(key);
+    setSecuritySettings(newSettings);
+
+    try {
+      const saved = await api.updateMeetingSecurity(meeting.id, { [key]: updatedValue });
+      setSecuritySettings(saved);
+      const labels: Record<keyof SecuritySettings, { on: string; off: string }> = {
+        is_locked: { on: 'Meeting locked. No new participants can join.', off: 'Meeting unlocked.' },
+        allow_share_screen: { on: 'Participants can now share their screen.', off: 'Screen sharing disabled for participants.' },
+        allow_chat: { on: 'Chat enabled for participants.', off: 'Chat disabled for participants.' },
+        allow_rename: { on: 'Participants can now rename themselves.', off: 'Renaming disabled for participants.' },
+        allow_unmute: { on: 'Participants can now unmute themselves.', off: 'Participants cannot unmute themselves.' }
+      };
+      success(updatedValue ? labels[key].on : labels[key].off);
+    } catch (err: unknown) {
+      setSecuritySettings(previous);
+      error((err as Error).message || 'Failed to update security settings.');
+    } finally {
+      setUpdatingSecurityKey(null);
     }
   };
 
@@ -1013,10 +1131,12 @@ export default function MeetingRoomPage() {
           onClose={() => setIsParticipantsOpen(false)}
           participants={roomParticipants}
           isHost={isHost}
+          allowRename={securitySettings.allow_rename}
           onMuteAll={handleMuteAll}
           onRemoveParticipant={handleRemoveParticipant}
           onToggleParticipantMute={handleToggleParticipantMute}
           onOpenInvite={() => setIsInviteModalOpen(true)}
+          onRenameSelf={handleRenameSelf}
         />
 
         {/* Chat Panel */}
@@ -1028,6 +1148,8 @@ export default function MeetingRoomPage() {
           }}
           messages={chatMessages}
           currentUserName={currentDisplayName}
+          isHost={isHost}
+          allowChat={securitySettings.allow_chat}
           onSendMessage={handleSendMessage}
         />
       </div>
@@ -1040,6 +1162,8 @@ export default function MeetingRoomPage() {
         isScreenSharing={!!screenShareStream}
         isRecording={isRecording}
         isHost={isHost}
+        allowShareScreen={securitySettings.allow_share_screen}
+        allowUnmute={securitySettings.allow_unmute}
         participantCount={roomParticipants.length}
         unreadChatCount={unreadChatCount}
         isParticipantsOpen={isParticipantsOpen}
@@ -1073,11 +1197,10 @@ export default function MeetingRoomPage() {
       <SecurityModal
         isOpen={isSecurityOpen}
         onClose={() => setIsSecurityOpen(false)}
-        isLocked={isLocked}
-        onToggleLock={() => {
-          setIsLocked(!isLocked);
-          info(!isLocked ? 'Meeting locked. No new participants can join.' : 'Meeting unlocked.');
-        }}
+        isHost={isHost}
+        settings={securitySettings}
+        onToggleSetting={handleToggleSecuritySetting}
+        isUpdatingKey={updatingSecurityKey}
       />
 
       {/* Invite Modal in-meeting */}

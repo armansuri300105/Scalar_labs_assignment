@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Send, Smile, Paperclip } from 'lucide-react';
+import { X, Send, Smile, Paperclip, Lock } from 'lucide-react';
 import { ChatMessage } from '../../types';
 import { formatTime } from '../../lib/utils';
 
@@ -10,6 +10,8 @@ interface ChatPanelProps {
   onClose: () => void;
   messages: ChatMessage[];
   currentUserName: string;
+  isHost?: boolean;
+  allowChat?: boolean;
   onSendMessage: (text: string) => void;
 }
 
@@ -18,6 +20,8 @@ export function ChatPanel({
   onClose,
   messages,
   currentUserName,
+  isHost = false,
+  allowChat = true,
   onSendMessage
 }: ChatPanelProps) {
   const [inputText, setInputText] = useState('');
@@ -42,8 +46,11 @@ export function ChatPanel({
 
   if (!isOpen) return null;
 
+  const isChatRestricted = !isHost && !allowChat;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isChatRestricted) return;
     if (!inputText.trim()) return;
     onSendMessage(inputText.trim());
     setInputText('');
@@ -105,20 +112,29 @@ export function ChatPanel({
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Restricted Chat Notice */}
+      {isChatRestricted && (
+        <div className="px-4 py-2.5 bg-amber-500/10 border-t border-amber-500/20 text-amber-300 text-xs flex items-center gap-2">
+          <Lock className="w-3.5 h-3.5 shrink-0" />
+          <span>In-meeting chat has been disabled by the host.</span>
+        </div>
+      )}
+
       {/* Input */}
       <form onSubmit={handleSubmit} className="p-3 border-t border-white/10 bg-[#181A20]">
-        <div className="flex items-center gap-2 bg-black/40 border border-white/10 rounded-xl px-3 py-1.5 focus-within:border-[#0E71EB]">
+        <div className={`flex items-center gap-2 bg-black/40 border border-white/10 rounded-xl px-3 py-1.5 ${isChatRestricted ? 'opacity-50 cursor-not-allowed' : 'focus-within:border-[#0E71EB]'}`}>
           <input
             type="text"
-            placeholder="Type message to everyone..."
+            disabled={isChatRestricted}
+            placeholder={isChatRestricted ? "Chat disabled by host" : "Type message to everyone..."}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            className="flex-1 bg-transparent text-xs text-white placeholder-slate-400 focus:outline-none"
+            className="flex-1 bg-transparent text-xs text-white placeholder-slate-400 focus:outline-none disabled:cursor-not-allowed"
           />
           <button
             type="submit"
-            disabled={!inputText.trim()}
-            className="p-1.5 rounded-lg bg-[#0E71EB] hover:bg-[#0B5ED7] disabled:opacity-40 text-white transition-colors cursor-pointer shrink-0"
+            disabled={isChatRestricted || !inputText.trim()}
+            className="p-1.5 rounded-lg bg-[#0E71EB] hover:bg-[#0B5ED7] disabled:opacity-40 text-white transition-colors cursor-pointer shrink-0 disabled:cursor-not-allowed"
           >
             <Send className="w-3.5 h-3.5" />
           </button>

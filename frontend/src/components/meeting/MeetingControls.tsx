@@ -25,6 +25,8 @@ interface MeetingControlsProps {
   isScreenSharing: boolean;
   isRecording?: boolean;
   isHost: boolean;
+  allowShareScreen?: boolean;
+  allowUnmute?: boolean;
   participantCount: number;
   unreadChatCount: number;
   isParticipantsOpen: boolean;
@@ -49,6 +51,8 @@ export function MeetingControls({
   isScreenSharing,
   isRecording = false,
   isHost,
+  allowShareScreen = true,
+  allowUnmute = true,
   participantCount,
   unreadChatCount,
   isParticipantsOpen,
@@ -112,14 +116,17 @@ export function MeetingControls({
 
         {/* Center: Main Meeting Tool Icons */}
         <div className="flex items-center gap-1 sm:gap-2">
-          {/* Security */}
-          <button
-            onClick={onOpenSecurity}
-            className="flex flex-col items-center justify-center w-14 sm:w-16 h-14 rounded-xl text-slate-200 hover:bg-white/10 transition-colors cursor-pointer"
-          >
-            <Shield className="w-5 h-5" />
-            <span className="text-[10px] mt-1 font-medium">Security</span>
-          </button>
+          {/* Security (Host Only) */}
+          {isHost && (
+            <button
+              onClick={onOpenSecurity}
+              className="flex flex-col items-center justify-center w-14 sm:w-16 h-14 rounded-xl text-slate-200 hover:bg-white/10 transition-colors cursor-pointer"
+              title="Meeting Security Options (Host Only)"
+            >
+              <Shield className="w-5 h-5 text-emerald-400" />
+              <span className="text-[10px] mt-1 font-medium text-emerald-400">Security</span>
+            </button>
+          )}
 
           {/* Participants */}
           <button
@@ -155,10 +162,13 @@ export function MeetingControls({
           <button
             onClick={onToggleScreenShare}
             className={`flex flex-col items-center justify-center w-14 sm:w-16 h-14 rounded-xl transition-colors cursor-pointer ${
-              isScreenSharing
+              !isHost && !allowShareScreen
+                ? 'opacity-40 text-slate-500 hover:bg-transparent cursor-not-allowed'
+                : isScreenSharing
                 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                 : 'text-emerald-400 hover:bg-white/10'
             }`}
+            title={!isHost && !allowShareScreen ? 'Screen sharing has been disabled by the host' : isScreenSharing ? 'Stop Screen Sharing' : 'Share Screen'}
           >
             <ArrowUpFromLine className="w-5 h-5" />
             <span className="text-[10px] mt-1 font-medium text-emerald-400">

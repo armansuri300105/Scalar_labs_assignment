@@ -20,8 +20,19 @@ try:
     with engine.connect() as conn:
         res = conn.execute(text("PRAGMA table_info(meetings);"))
         columns = [row[1] for row in res.fetchall()]
-        if columns and "owner_id" not in columns:
-            conn.execute(text("ALTER TABLE meetings ADD COLUMN owner_id VARCHAR;"))
+        if columns:
+            if "owner_id" not in columns:
+                conn.execute(text("ALTER TABLE meetings ADD COLUMN owner_id VARCHAR;"))
+            if "is_locked" not in columns:
+                conn.execute(text("ALTER TABLE meetings ADD COLUMN is_locked BOOLEAN DEFAULT 0;"))
+            if "allow_share_screen" not in columns:
+                conn.execute(text("ALTER TABLE meetings ADD COLUMN allow_share_screen BOOLEAN DEFAULT 1;"))
+            if "allow_chat" not in columns:
+                conn.execute(text("ALTER TABLE meetings ADD COLUMN allow_chat BOOLEAN DEFAULT 1;"))
+            if "allow_rename" not in columns:
+                conn.execute(text("ALTER TABLE meetings ADD COLUMN allow_rename BOOLEAN DEFAULT 1;"))
+            if "allow_unmute" not in columns:
+                conn.execute(text("ALTER TABLE meetings ADD COLUMN allow_unmute BOOLEAN DEFAULT 1;"))
             conn.commit()
 except Exception as _e:
     pass
@@ -54,6 +65,11 @@ def enrich_meeting(m: models.Meeting) -> dict:
         "passcode": m.passcode,
         "status": m.status,
         "owner_id": m.owner_id,
+        "is_locked": bool(getattr(m, "is_locked", False)),
+        "allow_share_screen": bool(getattr(m, "allow_share_screen", True)),
+        "allow_chat": bool(getattr(m, "allow_chat", True)),
+        "allow_rename": bool(getattr(m, "allow_rename", True)),
+        "allow_unmute": bool(getattr(m, "allow_unmute", True)),
         "created_at": m.created_at,
         "updated_at": m.updated_at,
         "participant_count": len([p for p in m.participants if not p.left_at]) if m.participants else 0,
@@ -239,6 +255,15 @@ async def join_meeting_endpoint(
                 detail="Incorrect meeting passcode."
             )
 
+    # Check if meeting is locked by host
+    if getattr(meeting, "is_locked", False):
+        is_owner = (current_user and meeting.owner_id and current_user.id == meeting.owner_id)
+        if not is_owner:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This meeting has been locked by the host. New participants cannot join."
+            )
+
     # Assign role: If meeting has an owner_id, only the authenticated owner can be host
     if meeting.owner_id:
         if current_user and current_user.id == meeting.owner_id:
@@ -305,10 +330,36 @@ async def update_participant_state(
     payload: schemas.ParticipantUpdate,
     db: Session = Depends(get_db)
 ):
+    meeting = crud.get_meeting(db, meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    participants = crud.get_participants(db, meeting.id, active_only=False)
+    target_p = next((p for p in participants if p.id == participant_id), None)
+    if not target_p:
+        raise HTTPException(status_code=404, detail="Participant not found")
+
+    is_host = (target_p.role == "host")
+
+    # If attempting to rename and allow_rename is False
+    if payload.display_name and not is_host and not getattr(meeting, "allow_rename", True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Renaming has been disabled by the meeting host."
+        )
+
+    # If attempting to unmute and allow_unmute is False
+    if payload.is_muted is False and not is_host and not getattr(meeting, "allow_unmute", True):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The host has not allowed participants to unmute themselves."
+        )
+
     participant = crud.update_participant_status(
         db,
         meeting_id=meeting_id,
         participant_id=participant_id,
+        display_name=payload.display_name,
         is_muted=payload.is_muted,
         is_video_off=payload.is_video_off,
         is_hand_raised=payload.is_hand_raised
@@ -343,6 +394,48 @@ def check_host_authorization(meeting: models.Meeting, user: Optional[models.User
         )
 
 # --- Host Controls (Authorized) ---
+@app.post("/api/meetings/{meeting_id}/security", response_model=schemas.SecuritySettingsResponse, tags=["Host Controls"])
+async def update_meeting_security(
+    meeting_id: str,
+    payload: schemas.SecuritySettingsUpdate,
+    current_user: Optional[models.User] = Depends(auth.get_optional_user),
+    db: Session = Depends(get_db)
+):
+    meeting = crud.get_meeting(db, meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    check_host_authorization(meeting, current_user)
+    
+    if payload.is_locked is not None:
+        meeting.is_locked = payload.is_locked
+    if payload.allow_share_screen is not None:
+        meeting.allow_share_screen = payload.allow_share_screen
+    if payload.allow_chat is not None:
+        meeting.allow_chat = payload.allow_chat
+    if payload.allow_rename is not None:
+        meeting.allow_rename = payload.allow_rename
+    if payload.allow_unmute is not None:
+        meeting.allow_unmute = payload.allow_unmute
+    
+    db.commit()
+    db.refresh(meeting)
+    
+    settings_dict = {
+        "is_locked": bool(meeting.is_locked),
+        "allow_share_screen": bool(meeting.allow_share_screen),
+        "allow_chat": bool(meeting.allow_chat),
+        "allow_rename": bool(meeting.allow_rename),
+        "allow_unmute": bool(meeting.allow_unmute)
+    }
+    
+    await manager.broadcast(meeting.id, {
+        "type": "SECURITY_SETTINGS_UPDATED",
+        "settings": settings_dict
+    })
+    
+    return settings_dict
+
 @app.post("/api/meetings/{meeting_id}/mute-all", tags=["Host Controls"])
 async def mute_all(
     meeting_id: str,
@@ -422,6 +515,13 @@ async def send_chat_message(
     meeting = crud.get_meeting(db, meeting_id)
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
+    
+    # Check if chat is disabled for participants by host
+    if not getattr(meeting, "allow_chat", True) and (payload.sender_role or "").lower() != "host":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chat has been disabled by the meeting host."
+        )
     
     chat = crud.add_chat_message(
         db,

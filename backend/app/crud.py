@@ -273,6 +273,7 @@ def update_participant_status(
     db: Session,
     meeting_id: str,
     participant_id: str,
+    display_name: Optional[str] = None,
     is_muted: Optional[bool] = None,
     is_video_off: Optional[bool] = None,
     is_hand_raised: Optional[bool] = None
@@ -287,6 +288,8 @@ def update_participant_status(
         .first()
     )
     if participant:
+        if display_name is not None and display_name.strip():
+            participant.display_name = display_name.strip()
         if is_muted is not None:
             participant.is_muted = is_muted
         if is_video_off is not None:

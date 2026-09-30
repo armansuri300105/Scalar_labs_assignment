@@ -36,6 +36,11 @@ class Meeting(Base):
     passcode = Column(String(32), nullable=True)
     status = Column(String(50), nullable=False, default="scheduled") # "scheduled", "active", "ended"
     owner_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
+    is_locked = Column(Boolean, default=False, nullable=False)
+    allow_share_screen = Column(Boolean, default=True, nullable=False)
+    allow_chat = Column(Boolean, default=True, nullable=False)
+    allow_rename = Column(Boolean, default=True, nullable=False)
+    allow_unmute = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=get_utc_now, nullable=False)
     updated_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now, nullable=False)
 

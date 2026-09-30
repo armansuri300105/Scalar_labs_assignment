@@ -23,6 +23,7 @@ class ParticipantResponse(ParticipantBase):
         from_attributes = True
 
 class ParticipantUpdate(BaseModel):
+    display_name: Optional[str] = None
     is_muted: Optional[bool] = None
     is_video_off: Optional[bool] = None
     is_hand_raised: Optional[bool] = None
@@ -79,6 +80,20 @@ class MeetingJoinRequest(BaseModel):
             raise ValueError("Display name cannot be blank or whitespace.")
         return v.strip()
 
+class SecuritySettingsUpdate(BaseModel):
+    is_locked: Optional[bool] = None
+    allow_share_screen: Optional[bool] = None
+    allow_chat: Optional[bool] = None
+    allow_rename: Optional[bool] = None
+    allow_unmute: Optional[bool] = None
+
+class SecuritySettingsResponse(BaseModel):
+    is_locked: bool
+    allow_share_screen: bool
+    allow_chat: bool
+    allow_rename: bool
+    allow_unmute: bool
+
 class MeetingResponse(BaseModel):
     id: str
     title: str
@@ -91,6 +106,11 @@ class MeetingResponse(BaseModel):
     passcode: Optional[str] = None
     status: str
     owner_id: Optional[str] = None
+    is_locked: Optional[bool] = False
+    allow_share_screen: Optional[bool] = True
+    allow_chat: Optional[bool] = True
+    allow_rename: Optional[bool] = True
+    allow_unmute: Optional[bool] = True
     created_at: datetime
     updated_at: datetime
     participant_count: Optional[int] = 0

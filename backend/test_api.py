@@ -207,6 +207,96 @@ def test_guest_access_and_chat_deduplication(meeting_id, invite_token, owner_tok
     assert r_leave.status_code == 200
     print("✓ Guest left meeting successfully")
 
+def test_security_options(meeting_id, owner_token):
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+
+    # 1. Non-host / unauthenticated attempt to change security settings -> 403
+    r_unauth_sec = client.post(f"/api/meetings/{meeting_id}/security", json={"is_locked": True})
+    assert r_unauth_sec.status_code == 403, "Unauthenticated user must not change security settings"
+    print("✓ Unauthorized security options modification blocked with 403")
+
+    # 2. Host locks meeting
+    r_lock = client.post(f"/api/meetings/{meeting_id}/security", headers=owner_headers, json={"is_locked": True})
+    assert r_lock.status_code == 200
+    assert r_lock.json()["is_locked"] is True
+    print("✓ Host successfully locked meeting")
+
+    # 3. New guest tries to join locked meeting -> 403
+    r_locked_join = client.post(f"/api/meetings/{meeting_id}/join", json={"display_name": "Late Guest"})
+    assert r_locked_join.status_code == 403
+    print("✓ New participant blocked from joining locked meeting with 403")
+
+    # 4. Host unlocks meeting
+    r_unlock = client.post(f"/api/meetings/{meeting_id}/security", headers=owner_headers, json={"is_locked": False})
+    assert r_unlock.status_code == 200
+    assert r_unlock.json()["is_locked"] is False
+    print("✓ Host successfully unlocked meeting")
+
+    # 5. Guest can now join
+    r_join_ok = client.post(f"/api/meetings/{meeting_id}/join", json={"display_name": "Admitted Guest"})
+    assert r_join_ok.status_code == 200
+    guest_id = r_join_ok.json()["id"]
+    print("✓ Participant admitted after meeting unlocked")
+
+    # 6. Host disables chat
+    r_no_chat = client.post(f"/api/meetings/{meeting_id}/security", headers=owner_headers, json={"allow_chat": False})
+    assert r_no_chat.status_code == 200
+    assert r_no_chat.json()["allow_chat"] is False
+
+    # Participant tries to send chat when disabled -> 403
+    r_chat_blocked = client.post(f"/api/meetings/{meeting_id}/messages", json={
+        "sender_name": "Admitted Guest",
+        "sender_role": "participant",
+        "message": "Is chat working?"
+    })
+    assert r_chat_blocked.status_code == 403
+    print("✓ Participant chat blocked when allow_chat is disabled by host")
+
+    # Host can still send chat
+    r_host_chat = client.post(f"/api/meetings/{meeting_id}/messages", json={
+        "sender_name": "Meeting Host",
+        "sender_role": "host",
+        "message": "Host announcement: chat is restricted."
+    })
+    assert r_host_chat.status_code == 201
+    print("✓ Host can still send announcements when chat is restricted")
+
+    # Host re-enables chat
+    client.post(f"/api/meetings/{meeting_id}/security", headers=owner_headers, json={"allow_chat": True})
+
+    # 7. Host disables unmuting
+    r_no_unmute = client.post(f"/api/meetings/{meeting_id}/security", headers=owner_headers, json={"allow_unmute": False})
+    assert r_no_unmute.status_code == 200
+    assert r_no_unmute.json()["allow_unmute"] is False
+
+    # Participant tries to unmute themselves -> 403
+    r_unmute_blocked = client.post(f"/api/meetings/{meeting_id}/participants/{guest_id}/status", json={"is_muted": False})
+    assert r_unmute_blocked.status_code == 403
+    print("✓ Participant self-unmute blocked when allow_unmute is disabled by host")
+
+    # Host re-enables unmuting
+    client.post(f"/api/meetings/{meeting_id}/security", headers=owner_headers, json={"allow_unmute": True})
+
+    # 8. Host disables renaming
+    r_no_rename = client.post(f"/api/meetings/{meeting_id}/security", headers=owner_headers, json={"allow_rename": False})
+    assert r_no_rename.status_code == 200
+    assert r_no_rename.json()["allow_rename"] is False
+
+    # Participant tries to rename themselves -> 403
+    r_rename_blocked = client.post(f"/api/meetings/{meeting_id}/participants/{guest_id}/status", json={"display_name": "Imposter"})
+    assert r_rename_blocked.status_code == 403
+    print("✓ Participant rename blocked when allow_rename is disabled by host")
+
+    # Host re-enables renaming
+    client.post(f"/api/meetings/{meeting_id}/security", headers=owner_headers, json={"allow_rename": True})
+    r_rename_ok = client.post(f"/api/meetings/{meeting_id}/participants/{guest_id}/status", json={"display_name": "Verified Guest"})
+    assert r_rename_ok.status_code == 200
+    assert r_rename_ok.json()["display_name"] == "Verified Guest"
+    print("✓ Participant rename permitted when enabled by host")
+
+    # Clean up guest
+    client.post(f"/api/meetings/{meeting_id}/leave?participant_id={guest_id}")
+
 if __name__ == "__main__":
     print("\n==========================================")
     print("RUNNING COMPREHENSIVE SECURITY & CHAT TESTS")
@@ -216,6 +306,7 @@ if __name__ == "__main__":
     token, user_id, host_name = test_user_auth_flow()
     mid, inv_token = test_authenticated_meeting_lifecycle(token, user_id, host_name)
     test_guest_access_and_chat_deduplication(mid, inv_token, token)
+    test_security_options(mid, token)
     print("\n==========================================")
     print("ALL TESTS PASSED WITH 100% SUCCESS! 🎉")
     print("==========================================\n")

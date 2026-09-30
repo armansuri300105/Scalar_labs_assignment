@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Search, Mic, MicOff, Video, VideoOff, MoreVertical, UserMinus, ShieldAlert, VolumeX, UserPlus } from 'lucide-react';
+import { X, Search, Mic, MicOff, Video, VideoOff, MoreVertical, UserMinus, ShieldAlert, VolumeX, UserPlus, Edit2, Check } from 'lucide-react';
 import { TileParticipant } from './VideoTile';
 
 interface ParticipantsPanelProps {
@@ -9,10 +9,12 @@ interface ParticipantsPanelProps {
   onClose: () => void;
   participants: TileParticipant[];
   isHost: boolean;
+  allowRename?: boolean;
   onMuteAll: () => void;
   onRemoveParticipant: (participantId: string) => void;
   onToggleParticipantMute: (participantId: string) => void;
   onOpenInvite: () => void;
+  onRenameSelf?: (newName: string) => void;
 }
 
 export function ParticipantsPanel({
@@ -20,13 +22,17 @@ export function ParticipantsPanel({
   onClose,
   participants,
   isHost,
+  allowRename = true,
   onMuteAll,
   onRemoveParticipant,
   onToggleParticipantMute,
-  onOpenInvite
+  onOpenInvite,
+  onRenameSelf
 }: ParticipantsPanelProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [isRenamingSelf, setIsRenamingSelf] = useState(false);
+  const [renameText, setRenameText] = useState('');
 
   if (!isOpen) return null;
 
@@ -77,20 +83,53 @@ export function ParticipantsPanel({
               </div>
 
               <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-medium truncate max-w-[130px]">
-                    {p.displayName}
-                  </span>
-                  {p.isSelf && <span className="text-[10px] text-slate-400">(Me)</span>}
-                </div>
-                <div className="flex items-center gap-1">
-                  {p.role === 'host' && (
-                    <span className="text-[10px] text-blue-400 font-semibold">Host</span>
-                  )}
-                  {p.isHandRaised && (
-                    <span className="text-[10px] text-amber-400 font-medium">✋ Raised hand</span>
-                  )}
-                </div>
+                {p.isSelf && isRenamingSelf ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (renameText.trim()) {
+                        onRenameSelf?.(renameText.trim());
+                        setIsRenamingSelf(false);
+                      }
+                    }}
+                    className="flex items-center gap-1 py-0.5"
+                  >
+                    <input
+                      type="text"
+                      value={renameText}
+                      onChange={(e) => setRenameText(e.target.value)}
+                      className="bg-black/60 border border-[#0E71EB] rounded px-1.5 py-0.5 text-xs text-white focus:outline-none w-24"
+                      autoFocus
+                    />
+                    <button type="submit" className="p-0.5 rounded text-emerald-400 hover:bg-white/10 cursor-pointer">
+                      <Check className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsRenamingSelf(false)}
+                      className="p-0.5 rounded text-slate-400 hover:bg-white/10 cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </form>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-medium truncate max-w-[130px]">
+                        {p.displayName}
+                      </span>
+                      {p.isSelf && <span className="text-[10px] text-slate-400">(Me)</span>}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {p.role === 'host' && (
+                        <span className="text-[10px] text-blue-400 font-semibold">Host</span>
+                      )}
+                      {p.isHandRaised && (
+                        <span className="text-[10px] text-amber-400 font-medium">✋ Raised hand</span>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -108,7 +147,39 @@ export function ParticipantsPanel({
                 <Video className="w-3.5 h-3.5 text-slate-300" />
               )}
 
-              {/* Host actions menu */}
+              {/* Self actions menu (Rename) */}
+              {p.isSelf && (isHost || allowRename) && !isRenamingSelf && (
+                <div className="relative">
+                  <button
+                    onClick={() => setActiveMenuId(activeMenuId === p.id ? null : p.id)}
+                    className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer"
+                    title="More options"
+                  >
+                    <MoreVertical className="w-3.5 h-3.5" />
+                  </button>
+
+                  {activeMenuId === p.id && (
+                    <div
+                      className="absolute right-0 mt-1 w-32 bg-[#24272C] rounded-xl shadow-xl border border-white/15 p-1 z-50 text-xs"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        onClick={() => {
+                          setRenameText(p.displayName);
+                          setIsRenamingSelf(true);
+                          setActiveMenuId(null);
+                        }}
+                        className="w-full text-left px-2.5 py-1.5 hover:bg-white/10 rounded-lg text-slate-200 cursor-pointer flex items-center gap-2"
+                      >
+                        <Edit2 className="w-3.5 h-3.5 text-blue-400" />
+                        <span>Rename</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Host actions menu for other participants */}
               {isHost && !p.isSelf && (
                 <div className="relative">
                   <button

@@ -154,15 +154,19 @@ export function VideoTile({
       {/* Top Right: Pin Option */}
       {onPin && (
         <button
-          onClick={onPin}
-          title={isPinned ? 'Unpin' : 'Pin participant'}
-          className={`absolute top-3 right-3 p-1.5 rounded-lg backdrop-blur-md transition-opacity ${
+          onClick={(e) => {
+            e.stopPropagation();
+            onPin();
+          }}
+          title={isPinned ? 'Unpin participant' : 'Pin participant'}
+          className={`absolute top-2.5 right-2.5 z-20 flex items-center gap-1.5 px-2 py-1 rounded-lg backdrop-blur-md transition-all cursor-pointer ${
             isPinned
-              ? 'bg-blue-600 text-white opacity-100'
-              : 'bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-black/80'
+              ? 'bg-[#0E71EB] text-white opacity-100 shadow-md shadow-blue-500/30 ring-1 ring-white/20'
+              : 'bg-black/60 text-slate-200 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 hover:bg-black/80 hover:text-white'
           }`}
         >
-          <Pin className="w-3.5 h-3.5" />
+          <Pin className={`w-3.5 h-3.5 ${isPinned ? 'fill-current' : ''}`} />
+          {isPinned && <span className="text-[10px] font-bold tracking-wide">Pinned</span>}
         </button>
       )}
 

@@ -19,7 +19,10 @@ export function ScheduleModal({ isOpen, onClose, onMeetingScheduled }: ScheduleM
   const { user, openAuthModal } = useAuth();
 
   const now = new Date();
-  const defaultDate = now.toISOString().split('T')[0];
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const defaultDate = `${yyyy}-${mm}-${dd}`;
   const nextHour = new Date(now.getTime() + 60 * 60 * 1000);
   const defaultTime = `${String(nextHour.getHours()).padStart(2, '0')}:00`;
 
@@ -64,7 +67,9 @@ export function ScheduleModal({ isOpen, onClose, onMeetingScheduled }: ScheduleM
 
     try {
       setIsSubmitting(true);
-      const scheduledDateTime = new Date(`${date}T${time}:00`);
+      const [year, month, day] = date.split('-').map(Number);
+      const [hours, minutes] = time.split(':').map(Number);
+      const scheduledDateTime = new Date(year, month - 1, day, hours, minutes, 0);
 
       const newMeeting = await api.createScheduledMeeting({
         title: title.trim(),

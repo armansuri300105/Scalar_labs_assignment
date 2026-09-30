@@ -67,6 +67,10 @@ export default function MeetingRoomPage() {
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
 
+  // Pin & Remote Screen Share State
+  const [pinnedParticipantId, setPinnedParticipantId] = useState<string | null>(null);
+  const [remoteScreenSharer, setRemoteScreenSharer] = useState<{ id: string; name: string } | null>(null);
+
   // Participants in Room (Self + Remotes/Simulated)
   const [roomParticipants, setRoomParticipants] = useState<TileParticipant[]>([]);
 
@@ -292,7 +296,12 @@ export default function MeetingRoomPage() {
   }, [meetingId]);
 
   // 2. Handle Joining from Lobby
-  const handleLobbyJoin = async (displayName: string, initialMuted: boolean, initialVideoOff: boolean) => {
+  const handleLobbyJoin = async (
+    displayName: string,
+    initialMuted: boolean,
+    initialVideoOff: boolean,
+    enteredPasscode?: string
+  ) => {
     if (!meeting) return;
     try {
       setIsJoining(true);
@@ -311,10 +320,17 @@ export default function MeetingRoomPage() {
       const role = isCreatorHost ? 'host' : 'participant';
       setIsHost(role === 'host');
 
-      // Call API to join
+      // Call API to join (with passcode verification)
+      const pass =
+        enteredPasscode ||
+        (typeof window !== 'undefined'
+          ? sessionStorage.getItem(`zoom_passcode_${meeting.id}`) || undefined
+          : undefined);
+
       const participant = await api.joinMeeting(meeting.id, {
         display_name: displayName,
-        role
+        role,
+        passcode: pass
       });
       setSelfParticipant(participant);
 
@@ -449,7 +465,19 @@ export default function MeetingRoomPage() {
                 }
               }
             } else if (data.type === 'REACTION') {
-              triggerReaction(data.emoji, data.sender_name);
+              if (data.sender_id !== pId && data.sender_name !== currentDisplayName) {
+                triggerReaction(data.emoji, data.sender_name || 'Participant');
+              }
+            } else if (data.type === 'SCREEN_SHARE_STARTED') {
+              if (data.participant_id !== pId) {
+                info(`${data.display_name} started sharing their screen.`);
+                setRemoteScreenSharer({ id: data.participant_id, name: data.display_name });
+              }
+            } else if (data.type === 'SCREEN_SHARE_STOPPED') {
+              if (data.participant_id !== pId) {
+                info(`${data.display_name} stopped sharing their screen.`);
+                setRemoteScreenSharer((prev) => (prev?.id === data.participant_id ? null : prev));
+              }
             } else if (data.type === 'ASK_UNMUTE') {
               const hostName = data.host_name || 'The host';
               info(`${hostName} asked you to unmute your microphone.`);
@@ -504,6 +532,8 @@ export default function MeetingRoomPage() {
               } else {
                 cleanupPeerConnection(data.participant_id);
                 setRoomParticipants((prev) => prev.filter((p) => p.id !== data.participant_id));
+                setPinnedParticipantId((prev) => (prev === data.participant_id ? null : prev));
+                setRemoteScreenSharer((prev) => (prev?.id === data.participant_id ? null : prev));
               }
             } else if (data.type === 'MEETING_ENDED') {
               info('The host has ended this meeting.');
@@ -653,6 +683,8 @@ export default function MeetingRoomPage() {
             } else if (data.type === 'PARTICIPANT_LEFT') {
               cleanupPeerConnection(data.participant_id);
               setRoomParticipants((prev) => prev.filter((p) => p.id !== data.participant_id));
+              setPinnedParticipantId((prev) => (prev === data.participant_id ? null : prev));
+              setRemoteScreenSharer((prev) => (prev?.id === data.participant_id ? null : prev));
               if (data.display_name) {
                 info(`${data.display_name} left the meeting.`);
               }
@@ -968,6 +1000,16 @@ export default function MeetingRoomPage() {
         }
       });
 
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'SCREEN_SHARE_STOPPED',
+            participant_id: selfParticipant?.id,
+            display_name: currentDisplayName
+          })
+        );
+      }
+
       success('Screen sharing stopped.');
       return;
     }
@@ -983,6 +1025,16 @@ export default function MeetingRoomPage() {
         setScreenShareStream(stream);
         setScreenShareBy(currentDisplayName);
         success('You are now sharing your screen.');
+
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(
+            JSON.stringify({
+              type: 'SCREEN_SHARE_STARTED',
+              participant_id: selfParticipant?.id,
+              display_name: currentDisplayName
+            })
+          );
+        }
 
         const screenTrack = stream.getVideoTracks()[0];
         // Send screen video track to all connected peers
@@ -1003,6 +1055,15 @@ export default function MeetingRoomPage() {
               sender.replaceTrack(camTrack);
             }
           });
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(
+              JSON.stringify({
+                type: 'SCREEN_SHARE_STOPPED',
+                participant_id: selfParticipant?.id,
+                display_name: currentDisplayName
+              })
+            );
+          }
           info('Screen sharing ended.');
         };
       } else {
@@ -1281,7 +1342,9 @@ export default function MeetingRoomPage() {
           participants={roomParticipants}
           viewMode={viewMode}
           screenShareStream={screenShareStream}
-          screenShareBy={screenShareBy}
+          screenShareBy={screenShareBy || (remoteScreenSharer ? remoteScreenSharer.name : null)}
+          pinnedParticipantId={pinnedParticipantId || (remoteScreenSharer ? remoteScreenSharer.id : null)}
+          onTogglePin={(id) => setPinnedParticipantId((prev) => (prev === id ? null : id))}
         />
 
         {/* Participants Panel */}

@@ -12,15 +12,27 @@ export function formatMeetingId(id: string): string {
   return cleaned;
 }
 
+export function parseDate(dateInput?: string | null): Date | null {
+  if (!dateInput) return null;
+  let str = dateInput.trim();
+  // If the server string is an ISO datetime without timezone suffix (e.g. 2026-09-30T15:00:00),
+  // append 'Z' so it is parsed as UTC and converted to local time in the user's browser.
+  if (str.includes('T') && !str.endsWith('Z') && !str.match(/[+-]\d{2}:?\d{2}$/)) {
+    str += 'Z';
+  }
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? null : d;
+}
+
 export function formatTime(dateInput?: string | null): string {
-  if (!dateInput) return '';
-  const d = new Date(dateInput);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const d = parseDate(dateInput);
+  if (!d) return '';
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
 export function formatDateTime(dateInput?: string | null): string {
-  if (!dateInput) return 'Unscheduled';
-  const d = new Date(dateInput);
+  const d = parseDate(dateInput);
+  if (!d) return 'Unscheduled';
   const now = new Date();
   
   const isToday = d.toDateString() === now.toDateString();
@@ -28,7 +40,7 @@ export function formatDateTime(dateInput?: string | null): string {
   tomorrow.setDate(now.getDate() + 1);
   const isTomorrow = d.toDateString() === tomorrow.toDateString();
 
-  const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const timeStr = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 
   if (isToday) {
     return `Today at ${timeStr}`;

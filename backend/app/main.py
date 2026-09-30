@@ -52,13 +52,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
 def enrich_meeting(m: models.Meeting) -> dict:
     data = {
         "id": m.id,
         "title": m.title,
         "description": m.description,
         "meeting_type": m.meeting_type,
-        "scheduled_at": m.scheduled_at,
+        "scheduled_at": ensure_utc(m.scheduled_at),
         "duration_minutes": m.duration_minutes,
         "host_name": m.host_name,
         "invite_token": m.invite_token,
@@ -70,8 +77,8 @@ def enrich_meeting(m: models.Meeting) -> dict:
         "allow_chat": bool(getattr(m, "allow_chat", True)),
         "allow_rename": bool(getattr(m, "allow_rename", True)),
         "allow_unmute": bool(getattr(m, "allow_unmute", True)),
-        "created_at": m.created_at,
-        "updated_at": m.updated_at,
+        "created_at": ensure_utc(m.created_at),
+        "updated_at": ensure_utc(m.updated_at),
         "participant_count": len([p for p in m.participants if not p.left_at]) if m.participants else 0,
         "invite_url": f"/invite/{m.invite_token}"
     }
@@ -247,13 +254,21 @@ async def join_meeting_endpoint(
             detail="Cannot join: Meeting does not exist."
         )
 
-    # Check passcode if meeting has one and provided
-    if meeting.passcode and payload.passcode:
-        if payload.passcode.strip() != meeting.passcode.strip():
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect meeting passcode."
-            )
+    # Enforce passcode: If meeting has a passcode configured, require and verify it (unless authenticated owner)
+    if meeting.passcode and meeting.passcode.strip():
+        is_owner = bool(current_user and meeting.owner_id and current_user.id == meeting.owner_id)
+        if not is_owner:
+            provided_passcode = (payload.passcode or "").strip()
+            if not provided_passcode:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="This meeting requires a passcode to join."
+                )
+            if provided_passcode != meeting.passcode.strip():
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Incorrect meeting passcode. Please try again."
+                )
 
     # Check if meeting is locked by host
     if getattr(meeting, "is_locked", False):
@@ -617,6 +632,7 @@ async def meeting_websocket(
     role: str = Query("participant"),
     db: Session = Depends(get_db)
 ):
+    clean_id = crud.clean_meeting_id(meeting_id)
     p_info = {
         "id": participant_id,
         "display_name": display_name,
@@ -624,7 +640,7 @@ async def meeting_websocket(
         "is_muted": False,
         "is_video_off": False
     }
-    await manager.connect(meeting_id, websocket, p_info)
+    await manager.connect(clean_id, websocket, p_info)
     try:
         while True:
             raw_text = await websocket.receive_text()
@@ -633,16 +649,29 @@ async def meeting_websocket(
 
             if event_type == "REACTION":
                 # emoji reactions (e.g. clap, thumbs up, heart, joy, surprised, tada)
-                await manager.broadcast(meeting_id, {
+                await manager.broadcast(clean_id, {
                     "type": "REACTION",
-                    "sender_name": display_name,
+                    "sender_name": data.get("sender_name") or display_name,
+                    "sender_id": participant_id,
                     "emoji": data.get("emoji", "👍")
+                })
+            elif event_type == "SCREEN_SHARE_STARTED":
+                await manager.broadcast(clean_id, {
+                    "type": "SCREEN_SHARE_STARTED",
+                    "participant_id": participant_id,
+                    "display_name": display_name
+                })
+            elif event_type == "SCREEN_SHARE_STOPPED":
+                await manager.broadcast(clean_id, {
+                    "type": "SCREEN_SHARE_STOPPED",
+                    "participant_id": participant_id,
+                    "display_name": display_name
                 })
             elif event_type == "SIGNAL":
                 # WebRTC peer signaling (offer/answer/ice-candidate)
                 target_id = data.get("target")
                 if target_id:
-                    await manager.send_to_user(meeting_id, target_id, {
+                    await manager.send_to_user(clean_id, target_id, {
                         "type": "SIGNAL",
                         "sender": participant_id,
                         "payload": data.get("payload")
@@ -650,19 +679,19 @@ async def meeting_websocket(
             elif event_type == "ASK_UNMUTE":
                 target_id = data.get("target")
                 if target_id:
-                    await manager.send_to_user(meeting_id, target_id, {
+                    await manager.send_to_user(clean_id, target_id, {
                         "type": "ASK_UNMUTE",
                         "host_name": display_name
                     })
             elif event_type == "MUTE_PARTICIPANT":
                 target_id = data.get("target")
                 if target_id:
-                    crud.update_participant_status(db, meeting_id, target_id, is_muted=True)
-                    await manager.send_to_user(meeting_id, target_id, {
+                    crud.update_participant_status(db, clean_id, target_id, is_muted=True)
+                    await manager.send_to_user(clean_id, target_id, {
                         "type": "HOST_MUTED_YOU",
                         "host_name": display_name
                     })
-                    await manager.broadcast(meeting_id, {
+                    await manager.broadcast(clean_id, {
                         "type": "PARTICIPANT_UPDATED",
                         "participant": {
                             "id": target_id,
@@ -675,12 +704,12 @@ async def meeting_websocket(
                 if content:
                     chat = crud.add_chat_message(
                         db,
-                        meeting_id=meeting_id,
+                        meeting_id=clean_id,
                         sender_name=display_name,
                         sender_role=role,
                         message=content
                     )
-                    await manager.broadcast(meeting_id, {
+                    await manager.broadcast(clean_id, {
                         "type": "CHAT_MESSAGE",
                         "message": {
                             "id": chat.id,
@@ -692,10 +721,12 @@ async def meeting_websocket(
                         }
                     })
     except WebSocketDisconnect:
-        left_info = manager.disconnect(meeting_id, websocket)
+        left_info = manager.disconnect(clean_id, websocket)
         if left_info:
-            await manager.broadcast(meeting_id, {
+            await manager.broadcast(clean_id, {
                 "type": "PARTICIPANT_LEFT",
                 "participant_id": left_info.get("id"),
                 "display_name": left_info.get("display_name")
             })
+    except Exception:
+        manager.disconnect(clean_id, websocket)

@@ -23,6 +23,9 @@ export default function InviteResolverPage() {
         setIsLoading(true);
         const resolved = await api.getMeetingByInviteToken(token);
         setMeeting(resolved);
+        if (typeof window !== 'undefined' && resolved.passcode) {
+          sessionStorage.setItem(`zoom_passcode_${resolved.id}`, resolved.passcode);
+        }
         // Automatically redirect to the meeting room pre-join screen
         setTimeout(() => {
           router.replace(`/meeting/${resolved.id}`);

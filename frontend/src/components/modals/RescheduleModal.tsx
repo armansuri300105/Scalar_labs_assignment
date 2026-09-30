@@ -5,6 +5,7 @@ import { Calendar, Clock, Shield, Loader2, CalendarClock } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { api } from '../../lib/api';
 import { Meeting } from '../../types';
+import { parseDate } from '../../lib/utils';
 import { useToast } from '../../context/ToastContext';
 
 interface RescheduleModalProps {
@@ -35,7 +36,7 @@ export function RescheduleModal({
       setTitle(meeting.title || '');
       setDescription(meeting.description || '');
       
-      const targetDate = meeting.scheduled_at ? new Date(meeting.scheduled_at) : new Date();
+      const targetDate = parseDate(meeting.scheduled_at) || new Date();
       const yyyy = targetDate.getFullYear();
       const mm = String(targetDate.getMonth() + 1).padStart(2, '0');
       const dd = String(targetDate.getDate()).padStart(2, '0');
@@ -62,7 +63,9 @@ export function RescheduleModal({
 
     try {
       setIsSubmitting(true);
-      const scheduledDateTime = new Date(`${date}T${time}:00`);
+      const [year, month, day] = date.split('-').map(Number);
+      const [hours, minutes] = time.split(':').map(Number);
+      const scheduledDateTime = new Date(year, month - 1, day, hours, minutes, 0);
 
       const updated = await api.rescheduleMeeting(meeting.id, {
         title: title.trim(),

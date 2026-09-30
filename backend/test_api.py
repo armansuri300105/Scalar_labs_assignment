@@ -360,6 +360,68 @@ def test_reschedule_and_delete_meeting(meeting_id: str, owner_token: str):
     assert get_res.status_code == 404
     print("✓ Verified deleted meeting returns 404")
 
+def test_passcode_and_timezone_enforcement():
+    # 1. Register host user
+    suffix = uuid.uuid4().hex[:6]
+    reg = client.post("/api/auth/register", json={
+        "email": f"host_pass_{suffix}@scalar.com",
+        "password": "Password123!",
+        "full_name": "Passcode Host"
+    })
+    token = reg.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 2. Schedule a meeting with passcode
+    sched_dt = datetime.now(timezone.utc) + timedelta(days=1)
+    res_sched = client.post("/api/meetings/scheduled", headers=headers, json={
+        "title": "Passcode Protected Strategy Session",
+        "scheduled_at": sched_dt.isoformat(),
+        "duration_minutes": 60,
+        "passcode": "778899"
+    })
+    assert res_sched.status_code == 201
+    m = res_sched.json()
+    mid = m["id"]
+    
+    # Verify timezone UTC indicator in serialized response
+    assert m["scheduled_at"].endswith("Z") or "+00:00" in m["scheduled_at"], "Meeting scheduled_at must serialize with UTC timezone"
+    print(f"✓ Scheduled meeting timezone UTC format verified ({m['scheduled_at']})")
+
+    # 3. Guest attempts to join without passcode -> 401
+    res_no_pass = client.post(f"/api/meetings/{mid}/join", json={
+        "display_name": "Intruder"
+    })
+    assert res_no_pass.status_code == 401
+    assert "passcode" in res_no_pass.json()["detail"].lower()
+    print("✓ Passcode enforcement: Guest joining without passcode blocked with 401")
+
+    # 4. Guest attempts to join with wrong passcode -> 401
+    res_bad_pass = client.post(f"/api/meetings/{mid}/join", json={
+        "display_name": "Guessing Guest",
+        "passcode": "111111"
+    })
+    assert res_bad_pass.status_code == 401
+    assert "incorrect" in res_bad_pass.json()["detail"].lower()
+    print("✓ Passcode enforcement: Guest joining with wrong passcode blocked with 401")
+
+    # 5. Guest joins with correct passcode -> 200
+    res_ok_pass = client.post(f"/api/meetings/{mid}/join", json={
+        "display_name": "Authorized Guest",
+        "passcode": "778899"
+    })
+    assert res_ok_pass.status_code == 200
+    p = res_ok_pass.json()
+    assert p["role"] == "participant"
+    print("✓ Passcode enforcement: Guest joining with correct passcode accepted with 200")
+
+    # 6. Authenticated owner joins without providing passcode -> 200 (owner bypass)
+    res_owner_join = client.post(f"/api/meetings/{mid}/join", headers=headers, json={
+        "display_name": "Passcode Host"
+    })
+    assert res_owner_join.status_code == 200
+    assert res_owner_join.json()["role"] == "host"
+    print("✓ Passcode enforcement: Authenticated owner joins seamlessly as host")
+
 if __name__ == "__main__":
     print("\n==========================================")
     print("RUNNING COMPREHENSIVE SECURITY & CHAT TESTS")
@@ -371,6 +433,7 @@ if __name__ == "__main__":
     test_guest_access_and_chat_deduplication(mid, inv_token, token)
     test_security_options(mid, token)
     test_reschedule_and_delete_meeting(mid, token)
+    test_passcode_and_timezone_enforcement()
     print("\n==========================================")
     print("ALL TESTS PASSED WITH 100% SUCCESS! 🎉")
     print("==========================================\n")

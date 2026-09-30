@@ -10,7 +10,7 @@ import { useAuth } from '../../context/AuthContext';
 
 interface PreJoinLobbyProps {
   meeting: Meeting;
-  onJoin: (displayName: string, isMuted: boolean, isVideoOff: boolean) => void;
+  onJoin: (displayName: string, isMuted: boolean, isVideoOff: boolean, passcode?: string) => void;
   isJoining: boolean;
 }
 
@@ -20,9 +20,21 @@ export function PreJoinLobby({ meeting, onJoin, isJoining }: PreJoinLobbyProps) 
   const { user } = useAuth();
 
   const [displayName, setDisplayName] = useState('');
+  const [passcode, setPasscode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem(`zoom_passcode_${meeting.id}`) || '';
+    }
+    return '';
+  });
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
+
+  const isHostUser =
+    (user && meeting.owner_id && user.id === meeting.owner_id) ||
+    (typeof window !== 'undefined' &&
+      (sessionStorage.getItem(`zoom_is_host_${meeting.id}`) === 'true' ||
+        localStorage.getItem(`zoom_is_host_${meeting.id}`) === 'true'));
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -41,8 +53,10 @@ export function PreJoinLobby({ meeting, onJoin, isJoining }: PreJoinLobbyProps) 
       const noVideo = sessionStorage.getItem('zoom_initial_no_video') === 'true';
       if (noAudio) setIsMuted(true);
       if (noVideo) setIsVideoOff(true);
+      const savedPass = sessionStorage.getItem(`zoom_passcode_${meeting.id}`);
+      if (savedPass) setPasscode(savedPass);
     }
-  }, [user]);
+  }, [user, meeting.id]);
 
   // Handle local camera preview
   useEffect(() => {
@@ -111,11 +125,19 @@ export function PreJoinLobby({ meeting, onJoin, isJoining }: PreJoinLobbyProps) 
       }
     } catch {}
 
+    if (meeting.passcode && !isHostUser && !passcode.trim()) {
+      error('Please enter the meeting passcode.');
+      return;
+    }
+    if (passcode.trim()) {
+      sessionStorage.setItem(`zoom_passcode_${meeting.id}`, passcode.trim());
+    }
+
     // Clean up preview stream before joining room
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
     }
-    onJoin(clean, isMuted, isVideoOff);
+    onJoin(clean, isMuted, isVideoOff, passcode.trim() || undefined);
   };
 
   return (
@@ -210,8 +232,14 @@ export function PreJoinLobby({ meeting, onJoin, isJoining }: PreJoinLobbyProps) 
             <div className="mt-2 text-xs text-slate-400 space-y-1">
               <div>Host: <span className="text-slate-200 font-medium">{meeting.host_name}</span></div>
               <div>Meeting ID: <span className="font-mono text-slate-200">{formatMeetingId(meeting.id)}</span></div>
-              {meeting.passcode && (
+              {meeting.passcode && isHostUser && (
                 <div>Passcode: <span className="font-mono text-slate-200">{meeting.passcode}</span></div>
+              )}
+              {meeting.passcode && !isHostUser && (
+                <div className="flex items-center gap-1.5 text-amber-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  <span>Passcode Required</span>
+                </div>
               )}
             </div>
           </div>
@@ -230,6 +258,23 @@ export function PreJoinLobby({ meeting, onJoin, isJoining }: PreJoinLobbyProps) 
                 className="w-full px-3.5 py-2.5 rounded-xl bg-[#111317] border border-slate-700 text-white text-sm focus:outline-none focus:border-[#0E71EB] focus:ring-1 focus:ring-[#0E71EB]"
               />
             </div>
+
+            {meeting.passcode && !isHostUser && (
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-300 flex items-center justify-between">
+                  <span>Meeting Passcode</span>
+                  <span className="text-[11px] text-amber-400 font-normal">Required</span>
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={passcode}
+                  onChange={(e) => setPasscode(e.target.value)}
+                  placeholder="Enter meeting passcode"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#111317] border border-slate-700 text-white text-sm font-mono focus:outline-none focus:border-[#0E71EB] focus:ring-1 focus:ring-[#0E71EB]"
+                />
+              </div>
+            )}
 
             <div className="space-y-2 pt-1 text-xs text-slate-300">
               <label className="flex items-center gap-2 cursor-pointer select-none">
